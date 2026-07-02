@@ -6,8 +6,8 @@ type LogLevelInput = string | number | undefined;
 
 /**
  * Thin wrapper around log4js that writes one log file per worker/process (thread_<pid>.log).
- * Works the same way under Playwright's parallel workers as it did under Cucumber's single process,
- * because each Playwright worker is its own OS process.
+ * Each Playwright worker is its own OS process, so keying the file by process.pid keeps every
+ * worker's log output separate with no coordination needed between workers.
  */
 export class Logger {
   constructor(logLevel: LogLevelInput, projectRoot: string) {
