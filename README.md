@@ -166,10 +166,10 @@ testdata/
                            one entry per LOB, read via TestDataFactory.getLobBaseUrls()
   testDataFactory.ts        Instance-based factory; one plain getXxxData() method per JSON file
 utils/
-  fixtures.ts               The "World" of the framework: registers the worker-scoped `logger`
-                           fixture, produces Given/When/Then/Before/After via createBdd(), and
-                           defines the global Before/After hooks (scenario start/PASS/FAIL
-                           logging, viewport/device report attachment) - every *.steps.ts file
+  fixtures.ts               Registers the worker-scoped `logger` fixture, produces
+                           Given/When/Then/Before/After via createBdd(), and defines the
+                           global Before/After hooks (scenario start/PASS/FAIL logging,
+                           viewport/device report attachment) - every *.steps.ts file
                            imports Given/When/Then from here
   logger.ts                 log4js wrapper, one log file per worker process
   baseUtil.ts                Log directory cleanup, used from global-setup.ts

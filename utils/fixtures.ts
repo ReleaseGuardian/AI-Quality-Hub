@@ -4,8 +4,8 @@ import { test as base, createBdd } from 'playwright-bdd';
 import { Logger } from './logger';
 
 /**
- * This file is the "World" of the new framework: it is where custom Playwright fixtures
- * are declared and where Given/When/Then/Before/After are bound to them.
+ * Custom Playwright fixtures are declared here, and Given/When/Then/Before/After are bound
+ * to them.
  *
  * Every step-definition file must import { Given, When, Then } from here (not from
  * 'playwright-bdd' directly), otherwise it won't have access to these fixtures.
@@ -34,7 +34,7 @@ export const test = base.extend<{}, WorkerFixtures>({
 export const { Given, When, Then, Before, After, BeforeAll, AfterAll } = createBdd(test);
 
 // Runs before every scenario - logs the scenario name and attaches viewport/device
-// info to the report, mirroring the old world.js `Before` hook.
+// info to the report.
 Before(async ({ logger }) => {
   const testInfo = test.info();
   logger.info('Running scenario:', testInfo.title, testInfo.retry > 0 ? `(retry ${testInfo.retry})` : '');

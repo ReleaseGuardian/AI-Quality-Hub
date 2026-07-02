@@ -8,10 +8,9 @@ import { BaseUtil } from './utils/baseUtil';
  * .env is already loaded by the time this runs - playwright.config.ts calls
  * dotenv.config() at module-load time, which always happens before globalSetup.
  *
- * Replaces the old world.js `BeforeAll` hook responsibility of clearing stale log
- * files from previous runs. Browser launch and video/screenshot capture are no longer
- * handled here - the Playwright test runner does that natively via
- * `use: { screenshot, video, trace }`.
+ * Clears stale log files from previous runs. Browser launch and video/screenshot
+ * capture are handled natively by the Playwright test runner via
+ * `use: { screenshot, video, trace }` in playwright.config.ts.
  */
 export default async function globalSetup() {
   const baseUtil = new BaseUtil();
