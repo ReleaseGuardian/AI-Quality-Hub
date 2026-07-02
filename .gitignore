@@ -7,7 +7,6 @@ playwright/.cache/
 videos/
 logs/
 *.log
-.env
 .env.local
 .claude/settings.local.json
 .DS_Store
