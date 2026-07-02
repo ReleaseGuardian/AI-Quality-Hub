@@ -1,4 +1,4 @@
-import { Given, When, Then } from './fixtures';
+import { Given, When, Then } from '../utils/fixtures';
 import { TestDataFactory } from '../testdata/testDataFactory';
 import { PageFactory } from '../pages/pageFactory';
 
@@ -10,7 +10,13 @@ Given('I navigate to the login page', async ({ page }) => {
 When('I log in as the {string} test user', async ({ page }, userKey: string) => {
   const pageFactory = new PageFactory(page);
   const dataFactory = new TestDataFactory();
-  const { username, password } = dataFactory.getLoginData()[userKey];
+  const loginData = dataFactory.getLoginData();
+
+  if (!loginData[userKey]) {
+    throw new Error(`No test user "${userKey}" found in testdata/${dataFactory.environment}/users.json`);
+  }
+
+  const { username, password } = loginData[userKey];
   await pageFactory.getLoginPage().login(username, password);
 });
 

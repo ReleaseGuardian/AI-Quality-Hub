@@ -10,17 +10,15 @@ type LogLevelInput = string | number | undefined;
  * because each Playwright worker is its own OS process.
  */
 export class Logger {
-  private readonly logFolderPath: string;
-
   constructor(logLevel: LogLevelInput, projectRoot: string) {
     const threadId = process.pid;
-    this.logFolderPath = path.join(projectRoot, 'logs');
+    const logFolderPath = path.join(projectRoot, 'logs');
 
-    if (!fs.existsSync(this.logFolderPath)) {
-      fs.mkdirSync(this.logFolderPath, { recursive: true });
+    if (!fs.existsSync(logFolderPath)) {
+      fs.mkdirSync(logFolderPath, { recursive: true });
     }
 
-    const logFilePath = path.join(this.logFolderPath, `thread_${threadId}.log`);
+    const logFilePath = path.join(logFolderPath, `thread_${threadId}.log`);
 
     log4js.configure({
       appenders: {
@@ -54,28 +52,6 @@ export class Logger {
   /** Returns a ready-to-use log4js logger instance. */
   createLogger(): Log4jsLogger {
     return log4js.getLogger();
-  }
-
-  /** Deletes all *.log files in the log folder. Guards against path traversal. */
-  deleteLogFiles(): void {
-    const resolvedLogFolder = path.resolve(this.logFolderPath);
-
-    if (!fs.existsSync(resolvedLogFolder)) return;
-
-    const files = fs.readdirSync(resolvedLogFolder);
-    files.forEach((file) => {
-      const filePath = path.join(resolvedLogFolder, file);
-      const resolvedFilePath = path.resolve(filePath);
-
-      if (!resolvedFilePath.startsWith(resolvedLogFolder + path.sep)) {
-        console.error('Security: path traversal attempt blocked for:', file);
-        return;
-      }
-
-      if (file.endsWith('.log')) {
-        fs.unlinkSync(resolvedFilePath);
-      }
-    });
   }
 }
 

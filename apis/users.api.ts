@@ -1,4 +1,4 @@
-import type { APIRequestContext, APIResponse } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
 import { BaseApiClient } from './baseApiClient';
 
 export interface User {
@@ -21,8 +21,8 @@ export interface User {
  * fixture that talks to it (APIRequestContext instead of Page).
  */
 export class UsersApi extends BaseApiClient {
-  constructor(request: APIRequestContext) {
-    super(process.env.API_LOCATION ?? '', request);
+  constructor(request: APIRequestContext, lob: string = process.env.LOB ?? 'default') {
+    super(lob, request);
   }
 
   getUsers() {

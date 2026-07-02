@@ -9,11 +9,6 @@ import fsExtra from 'fs-extra';
  * so no custom LaunchBrowser / AttachScreenshotOnFailure code is needed here.
  */
 export class BaseUtil {
-  /** Empties the video directory before a run starts. */
-  async cleanUpVideosAtPath(videoPath: string) {
-    await fsExtra.emptyDir(videoPath);
-  }
-
   /** Empties the logs directory before a run starts (equivalent of the old preunitTest log cleanup). */
   async cleanUpLogsAtPath(logsPath: string) {
     await fsExtra.emptyDir(logsPath);

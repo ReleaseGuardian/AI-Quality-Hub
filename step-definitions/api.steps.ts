@@ -1,8 +1,8 @@
 import { expect } from '@playwright/test';
-import { Given } from './fixtures';
+import { Given } from '../utils/fixtures';
 import { UsersApi, type User } from '../apis/users.api';
 
-Given('Invoke the get request and perform validation', async ({ request }) => {
+Given('Invoke the get users request and perform validation', async ({ request }) => {
   const usersApi = new UsersApi(request);
   const response = await usersApi.getUsers();
 

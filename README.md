@@ -20,6 +20,7 @@ It covers both **UI testing** (Page Object Model, driven by a `PageFactory`) and
 - [Browser selection](#browser-selection)
 - [Parallelization and retries](#parallelization-and-retries)
 - [Tags](#tags)
+- [Logging and debugging](#logging-and-debugging)
 - [Viewing reports](#viewing-reports)
 - [Writing new tests](#writing-new-tests)
 - [Troubleshooting](#troubleshooting)
@@ -37,6 +38,7 @@ It covers both **UI testing** (Page Object Model, driven by a `PageFactory`) and
 | [`dotenv`](https://www.npmjs.com/package/dotenv) | Loads `.env` into `process.env` |
 | [`log4js`](https://www.npmjs.com/package/log4js) | Per-worker file logging (`logs/thread_<pid>.log`) |
 | [`fs-extra`](https://www.npmjs.com/package/fs-extra) | Used for recursively clearing the `logs/` directory before a run |
+| [`eslint`](https://eslint.org/) + [`typescript-eslint`](https://typescript-eslint.io/) | Linting (`eslint.config.js`, flat config) — separate from `typecheck` |
 
 No CucumberJS runtime, no axios (API calls go through Playwright's own `APIRequestContext`), no other UI/API testing libraries.
 
@@ -118,17 +120,17 @@ Configuration lives in `.env` (tracked in the repo with working defaults) and `.
 | `BROWSER_NAME` | Which browser engine the `ui` project uses — `chromium` \| `firefox` \| `webkit`. An unrecognized value throws a clear error at config-load time. | `chromium` |
 | `DEVICE` | Optional Playwright device-emulation preset name (e.g. `iPhone 13`). Takes priority over `VIEWPORT_WIDTH`/`VIEWPORT_HEIGHT` if set. | *(empty = off)* |
 | `HEADLESS` | Whether the browser runs headless. `HEADLESS=false` to watch it run. `--headed` on the CLI overrides this regardless of the value here. | `true` |
-| `SLOWMO` | Milliseconds of delay Playwright inserts between actions — useful for watching a headed run. | `0` |
-| `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` | Viewport size, used when `DEVICE` isn't set. | `1280` / `720` |
+| `SLOWMO` | Milliseconds of delay Playwright inserts between actions — useful for watching a headed run. Non-numeric values throw a clear error at config-load time. | `0` |
+| `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` | Viewport size, used when `DEVICE` isn't set. Non-numeric values throw a clear error at config-load time. | `1280` / `720` |
 | `VIDEO_RECORDING_CONDITION` | Playwright's `video` option — `off` \| `on` \| `retain-on-failure` \| `on-first-retry`. | `retain-on-failure` |
 | `SCREENSHOT_CONDITION` | Playwright's `screenshot` option — `off` \| `on` \| `only-on-failure`. | `only-on-failure` |
 | `TRACE_CONDITION` | Playwright's `trace` option — `off` \| `on` \| `retain-on-failure` \| `on-first-retry`. | `on-first-retry` |
 | `LOGIN_APP_URL` | Base URL for the UI login scenarios (`pages/login.page.ts`). | `https://practicetestautomation.com/practice-test-login/` |
-| `API_LOCATION` | Base URI for API objects extending `BaseApiClient` (e.g. `UsersApi`). **Must end with `/`.** | `https://fake-json-api.mock.beeceptor.com/` |
+| `LOB` | Which LOB's base URL (from `apis/lobBaseUrls.json`) API objects use by default. Unknown values throw a clear error at request time. | `default` |
 | `TEST_ENVIRONMENT` | Selects which `testdata/<environment>/` folder the test data factory reads from. | `dev` |
 | `LOG_LEVEL` | log4js log level (`1`–`5`; see `utils/logger.ts`). | `4` |
-| `RETRIES` | Overrides Playwright's retry count. | `0` locally, `1` in CI |
-| `WORKERS` | Overrides Playwright's worker count. | unset locally, `2` in CI |
+| `RETRIES` | Overrides Playwright's retry count. Non-numeric values throw a clear error at config-load time. | `0` locally, `1` in CI |
+| `WORKERS` | Overrides Playwright's worker count. Non-numeric values throw a clear error at config-load time. | unset locally, `2` in CI |
 | `MemberPortal_url`, `MP_userName`, `MP_password`, `AUTH_LOCATION` | Not currently read by any code — placeholders reserved for an upcoming Member Portal test target. | — |
 
 To point the suite at different values, either edit `.env` directly, or override a variable for a single run:
@@ -148,27 +150,38 @@ features/
   ui/                     UI .feature files (run under the "ui" project - browser chosen via BROWSER_NAME)
   api/                    API .feature files (run under the "api" project, no browser launched)
 step-definitions/
-  fixtures.ts             Registers the worker-scoped `logger` fixture, produces Given/When/Then/Before/
-                           After via createBdd(), and defines the global Before hook (scenario logging,
-                           viewport/device report attachment)
-  *.steps.ts              Step definitions, grouped by feature area
+  *.steps.ts              Step definitions, grouped by feature area, import Given/When/Then
+                           from ../utils/fixtures
 pages/
   login.page.ts            Page object - locators as class fields, methods for actions/assertions
   pageFactory.ts            Constructs one of each page object per `new PageFactory(page)` call and
                            exposes getXPage() getters - step definitions ask the factory for a page
 apis/
-  baseApiClient.ts          Shared base: stores a per-resource baseUri + Playwright's APIRequestContext
+  baseApiClient.ts          Shared base: resolves a baseUri per LOB via TestDataFactory +
+                           stores Playwright's APIRequestContext
   users.api.ts              One class per resource, extends BaseApiClient, builds its own URLs
 testdata/
-  dev/users.json            Environment-scoped JSON test data
+  dev/users.json            Environment-scoped JSON test data (login credentials)
+  dev/lobBaseUrls.json      Environment-scoped LOB (line of business) name -> base URL lookup,
+                           one entry per LOB, read via TestDataFactory.getLobBaseUrls()
   testDataFactory.ts        Instance-based factory; one plain getXxxData() method per JSON file
 utils/
+  fixtures.ts               The "World" of the framework: registers the worker-scoped `logger`
+                           fixture, produces Given/When/Then/Before/After via createBdd(), and
+                           defines the global Before/After hooks (scenario start/PASS/FAIL
+                           logging, viewport/device report attachment) - every *.steps.ts file
+                           imports Given/When/Then from here
   logger.ts                 log4js wrapper, one log file per worker process
   baseUtil.ts                Log directory cleanup, used from global-setup.ts
 playwright.config.ts       Projects ("ui", "api"), reporters, screenshot/video/trace config, bddgen
-                           config, env-driven browser/retries/workers
-global-setup.ts            Runs once before all workers: loads .env, clears old logs
+                           config, env-driven browser/retries/workers, with validated numeric env vars
+global-setup.ts            Runs once before all workers: clears old logs (.env is already loaded by
+                           the time this runs, via playwright.config.ts)
 tsconfig.json               TypeScript compiler options (strict, no emit - Playwright runs .ts directly)
+eslint.config.js            ESLint flat config (typescript-eslint recommended rules)
+scripts/
+  open-latest-report.js      Finds and opens the most recent playwright-report/<timestamp>/ folder
+                           (used by `npm run report`) - plain Node, works the same on every OS
 ```
 
 ---
@@ -186,12 +199,13 @@ Both pages and API objects are constructed directly inside the step definition t
   ```
   (see `step-definitions/login.steps.ts`). `PageFactory`'s constructor instantiates every page object up front, and one `getXPage()` getter exposes each. Add a new page by adding it to the constructor and adding its getter.
 
-- **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`, which stores a `baseUri` + Playwright's `APIRequestContext` (nothing else). Each resource method builds its own URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly — URL-building lives at the service layer, not in a shared base helper, so different resources can target entirely different hosts. No factory: step definitions just do
+- **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`. Its constructor takes an `lob` (line of business) name and resolves the actual `baseUri` from `apis/lobBaseUrls.json` — an unrecognized LOB throws a clear error immediately rather than silently using the wrong host. Each resource method then builds its own URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly — URL-building lives at the service layer, not in a shared base helper. No factory: step definitions just do
   ```ts
-  const usersApi = new UsersApi(request);
+  const usersApi = new UsersApi(request);              // uses the LOB env var, or 'default'
+  const usersApiForGlobex = new UsersApi(request, 'globex'); // explicit LOB override
   const response = await usersApi.getUsers();
   ```
-  (see `step-definitions/api.steps.ts`), using Playwright's built-in `request` fixture.
+  (see `step-definitions/api.steps.ts`), using Playwright's built-in `request` fixture. Every resource constructor should follow this same pattern — `constructor(request, lob = process.env.LOB ?? 'default')` — so a run defaults to one LOB (set via the `LOB` env var) but any step can target a specific LOB explicitly when needed. Adding LOB #31 is a one-line addition to `lobBaseUrls.json`, no code change.
 
 Both give every scenario a fresh, isolated instance — no shared mutable state between tests, which is what makes parallel workers and retries safe.
 
@@ -218,8 +232,9 @@ Test data (e.g. login credentials) lives in JSON under `testdata/<environment>/`
 | `npm run test:debug` | UI scenarios in Playwright's step-through debugger (`--debug`) |
 | `npm run test:ui-mode` | Opens Playwright's interactive UI mode (`--ui`) for exploring/re-running tests visually |
 | `npm run bddgen` | Regenerates `.features-gen/` from `.feature` files without running anything |
-| `npm run report` | Opens the last Playwright HTML report |
-| `npm run typecheck` (alias: `npm run lint`) | `tsc --noEmit` — type-checks the whole project, no build output |
+| `npm run report` | Opens the most recent Playwright HTML report (each run gets its own timestamped folder) |
+| `npm run typecheck` | `tsc --noEmit` — type-checks the whole project, no build output |
+| `npm run lint` | `eslint .` — lints the whole project against `eslint.config.js` |
 
 You can also drop straight to the Playwright CLI for anything not covered by a script, e.g.:
 
@@ -248,6 +263,7 @@ To run against a different browser, edit `BROWSER_NAME` in `.env` (or override i
 - `WORKERS` env var overrides the worker count (defaults: unset locally, `2` in CI).
 - `RETRIES` env var overrides the retry count (defaults: `0` locally, `1` in CI).
 - Because page/API objects are constructed fresh per scenario and hold no shared state, a retried scenario gets a brand-new `page`/`UsersApi`/etc., so retries don't inherit state from the failed attempt.
+- `testdata/testDataFactory.ts` deep-clones every JSON file it loads before returning it (`JSON.parse(JSON.stringify(...))`). `require()` caches the underlying module, so without the clone, a test that mutated its returned data would leak that mutation into every other test sharing the same worker for the rest of the run — the clone guarantees each caller gets an independent copy.
 
 Example (multiple variables at once):
 
@@ -272,31 +288,58 @@ npx playwright test --grep-invert @Regression
 
 ---
 
+## Logging and debugging
+
+Every worker process writes its own log file to `logs/thread_<pid>.log` (gitignored, cleared at the start of each run by `global-setup.ts`). Two global hooks in `utils/fixtures.ts` write to it automatically — no per-step logging code needed:
+
+- **`Before`**: logs the scenario name (plus `(retry N)` if this is a retried attempt) as soon as it starts.
+- **`After`**: logs `Scenario PASSED: <title>` or `Scenario FAILED: <title>`, and on failure, the actual error message(s) Playwright captured (`testInfo.errors`) — so you can trace what went wrong straight from the log file, without reopening the HTML report or a trace.
+
+Example failure entry:
+
+```
+[2026-07-02T09:57:26.030] [ERROR] default - Scenario FAILED: Login fails with an invalid password
+Error: No test user "invalidPasswordXXX" found in testdata/dev/users.json
+```
+
+Set `LOG_LEVEL` in `.env` to control verbosity (see the [environment configuration table](#environment-configuration)). Need a logger inside a step or page/API object? Take the worker-scoped `logger` fixture the same way `fixtures.ts` does — destructure it from the fixtures object (`async ({ logger }) => { logger.info(...) }`).
+
+---
+
 ## Viewing reports
 
-- `npm run report` opens the native Playwright HTML report from the last run (`playwright-report/`, gitignored).
+- Every run writes its own timestamped HTML report folder — `playwright-report/<ISO-timestamp>/` — instead of overwriting the previous run's report, so you can compare a past run against a new one (`playwright-report/`, gitignored).
+- `npm run report` runs `scripts/open-latest-report.js`, which finds the most recently modified folder under `playwright-report/` and opens it — no need to remember or type a timestamp.
 - The `list` reporter prints pass/fail per scenario directly to the terminal as tests run.
 - On failure, screenshots/videos/traces are attached per `SCREENSHOT_CONDITION`/`VIDEO_RECORDING_CONDITION`/`TRACE_CONDITION` in `.env` — open a trace with `npx playwright show-trace <path-to-trace.zip>`.
+- To open a specific past run's report directly: `npx playwright show-report playwright-report/<timestamp>`.
+- `playwright-report/` isn't pruned automatically — old run folders accumulate locally until you delete them.
 
 ---
 
 ## Writing new tests
 
 1. Add a `.feature` file under `features/ui/` or `features/api/`.
-2. Add/extend a `*.steps.ts` file under `step-definitions/`, importing `Given/When/Then` **from `./fixtures`**, not from `playwright-bdd` directly (that's what wires up the custom fixtures below).
+2. Add/extend a `*.steps.ts` file under `step-definitions/`, importing `Given/When/Then` **from `../utils/fixtures`**, not from `playwright-bdd` directly (that's what wires up the custom fixtures below).
 3. For a new UI flow: add a page object under `pages/*.page.ts`, then register it in `pages/pageFactory.ts` (constructor + `getXPage()` getter).
-4. For a new API resource: add a class under `apis/*.api.ts` extending `BaseApiClient`, and instantiate it directly in the step file (`new YourApi(request)`) — no factory or fixture needed.
+4. For a new API resource: add a class under `apis/*.api.ts` extending `BaseApiClient` (constructor takes `request` and an optional `lob`, defaulting to `process.env.LOB ?? 'default'`), and instantiate it directly in the step file (`new YourApi(request)`) — no factory or fixture needed. For a new LOB, add its base URL to `apis/lobBaseUrls.json`.
 5. For new test data: add a JSON file under `testdata/<environment>/` and a one-line getter method on `TestDataFactory`.
 6. Run `npm test` (it regenerates `.features-gen/` automatically via `bddgen`, which is gitignored).
+7. Before committing, run `npm run typecheck` and `npm run lint` — neither runs automatically as part of `npm test`.
 
 ---
 
 ## Troubleshooting
 
 - **`Unknown BROWSER_NAME "..."` error on startup** — `BROWSER_NAME` in `.env` must be exactly `chromium`, `firefox`, or `webkit`.
+- **`Unknown LOB "..."` error** — the LOB name (from the `LOB` env var or an explicit constructor argument, e.g. `new UsersApi(request, 'globex')`) doesn't have an entry in `apis/lobBaseUrls.json`. Add it there.
+- **Invalid `RETRIES`/`WORKERS`/`SLOWMO`/`VIEWPORT_WIDTH`/`VIEWPORT_HEIGHT`** — these must be plain numbers; a non-numeric value throws a clear error at config-load time (same as `BROWSER_NAME`) instead of silently misbehaving.
+- **`No test user "..." found in testdata/<env>/users.json`** — the key used in a `.feature` file's `When I log in as the "..." test user` step doesn't exist in `testdata/<TEST_ENVIRONMENT>/users.json`. Check the JSON file's keys and `TEST_ENVIRONMENT` match.
 - **A UI test times out waiting on a locator** — check whether the target site (`LOGIN_APP_URL`, a public demo site) is rate-limiting repeated runs; re-run after a short wait.
 - **`tsc --noEmit` errors after pulling changes** — run `npm install` again; a dependency or type declaration may have changed.
+- **`eslint` errors after pulling changes** — run `npm install` again; `eslint.config.js`'s rules or dependencies may have changed.
 - **Browser binaries missing** — run `npx playwright install` again (this doesn't happen automatically on `npm install`).
+- **Need to trace what happened in a failed run** — check `logs/thread_<pid>.log` first; every scenario logs a clear `PASSED`/`FAILED` line with the error message (see [Logging and debugging](#logging-and-debugging)).
 - **(Windows) `'VAR' is not recognized as an internal or external command`** — you used bash-style inline env vars (`VAR=value command`) in PowerShell or cmd.exe, which don't support that syntax. Use the PowerShell/cmd.exe equivalents shown throughout this doc, or switch to Git Bash.
 - **(Windows) A script silently no-ops or `&&` behaves oddly in cmd.exe** — prefer PowerShell or Git Bash over cmd.exe for anything beyond the single-line examples above; cmd.exe's quoting/chaining rules are more limited.
 - **(Windows) `npm install` fails on a native dependency build step** — make sure a recent Node.js LTS is installed (this project has no native/node-gyp dependencies itself, but a corrupted global npm cache can still cause this); try `npm cache clean --force` then `npm install` again.

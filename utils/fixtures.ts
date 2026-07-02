@@ -1,7 +1,7 @@
 import path from 'path';
 import log4js from 'log4js';
 import { test as base, createBdd } from 'playwright-bdd';
-import { Logger } from '../utils/logger';
+import { Logger } from './logger';
 
 /**
  * This file is the "World" of the new framework: it is where custom Playwright fixtures
@@ -47,4 +47,22 @@ Before(async ({ logger }) => {
     const height = process.env.VIEWPORT_HEIGHT ?? '720';
     await testInfo.attach('Viewport', { body: `${width} x ${height}`, contentType: 'text/plain' });
   }
+});
+
+// Runs after every scenario - logs the pass/fail outcome and, on failure, the actual
+// error message(s) so the per-worker log file (logs/thread_<pid>.log) is enough to trace
+// what went wrong without having to reopen the HTML report or trace viewer.
+After(async ({ logger }) => {
+  const testInfo = test.info();
+  const attempt = testInfo.retry > 0 ? ` (retry ${testInfo.retry})` : '';
+
+  if (testInfo.status === testInfo.expectedStatus) {
+    logger.info(`Scenario PASSED: ${testInfo.title}${attempt}`);
+    return;
+  }
+
+  const errorDetails = testInfo.errors.length
+    ? testInfo.errors.map((error) => error.message ?? String(error)).join('\n')
+    : `status: ${testInfo.status}`;
+  logger.error(`Scenario FAILED: ${testInfo.title}${attempt}\n${errorDetails}`);
 });
