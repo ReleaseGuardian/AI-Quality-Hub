@@ -2,17 +2,144 @@
 
 A Playwright BDD test framework built with **[playwright-bdd](https://vitalets.github.io/playwright-bdd/)** + **TypeScript**. Gherkin `.feature` files compile into native Playwright test files via `playwright-bdd` and run on the Playwright test runner — there is no CucumberJS runtime dependency anywhere in this project.
 
-## Why playwright-bdd over CucumberJS
+It covers both **UI testing** (Page Object Model, driven by a `PageFactory`) and **API testing** (a parallel object-per-resource pattern built on Playwright's own `request` context), with an environment-aware test data factory, env-driven browser/parallelization config, and native Playwright reporting.
 
-| | CucumberJS-based setup | PlaywrightBDD-TS (this project) |
+---
+
+## Table of contents
+
+- [Technology stack](#technology-stack)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Environment configuration](#environment-configuration)
+- [Project layout](#project-layout)
+- [Architecture](#architecture)
+  - [Page objects and API objects](#page-objects-and-api-objects)
+  - [Test data factory](#test-data-factory)
+- [Running tests](#running-tests)
+- [Browser selection](#browser-selection)
+- [Parallelization and retries](#parallelization-and-retries)
+- [Tags](#tags)
+- [Viewing reports](#viewing-reports)
+- [Writing new tests](#writing-new-tests)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Technology stack
+
+| Package | Role |
+|---|---|
+| [`@playwright/test`](https://playwright.dev/) | Test runner, browser automation (Chromium/Firefox/WebKit), assertions, HTML reporting |
+| [`playwright`](https://playwright.dev/) | Browser binaries / driver used by `@playwright/test` |
+| [`playwright-bdd`](https://vitalets.github.io/playwright-bdd/) | Compiles Gherkin `.feature` files into native Playwright spec files (`bddgen`), and binds `Given/When/Then` to Playwright fixtures via `createBdd()` |
+| [`typescript`](https://www.typescriptlang.org/) | Language — strict mode, no build step needed (Playwright runs `.ts` files directly) |
+| [`dotenv`](https://www.npmjs.com/package/dotenv) | Loads `.env` into `process.env` |
+| [`log4js`](https://www.npmjs.com/package/log4js) | Per-worker file logging (`logs/thread_<pid>.log`) |
+| [`fs-extra`](https://www.npmjs.com/package/fs-extra) | Used for recursively clearing the `logs/` directory before a run |
+
+No CucumberJS runtime, no axios (API calls go through Playwright's own `APIRequestContext`), no other UI/API testing libraries.
+
+---
+
+## Prerequisites
+
+- **Node.js** `>= 20.0.0` and **npm** `>= 10.0.0` (see `engines` in `package.json`; `.nvmrc` pins `20` if you use `nvm`)
+  - **Windows**: install from the [official Node.js installer](https://nodejs.org/) (LTS), or use [`nvm-windows`](https://github.com/coreybutler/nvm-windows) if you manage multiple Node versions (note: this is a separate tool from `nvm` on macOS/Linux — commands differ slightly, e.g. `nvm install 20` / `nvm use 20`)
+  - **macOS/Linux**: install via [`nvm`](https://github.com/nvm-sh/nvm), Homebrew, or your package manager
+- **git**
+  - **Windows**: install [Git for Windows](https://git-scm.com/download/win) — this also installs **Git Bash**, which is the recommended shell for this project (see note below)
+  - **macOS/Linux**: usually preinstalled, or via Xcode Command Line Tools / your package manager
+- No global CLI tools required — everything runs through local `npm` scripts and `npx`
+
+### A note for Windows users
+
+Every `npm run <script>` command in this README works identically on Windows, macOS, and Linux — they're plain `npm`/`npx` invocations. The only shell-specific bits are the handful of examples below that set an environment variable **inline** on the same line as a command (e.g. `BROWSER_NAME=firefox npm test`) — that syntax is bash/POSIX-shell only. Where that comes up, this doc shows the **Git Bash**, **PowerShell**, and **cmd.exe** equivalents side by side.
+
+**Recommendation**: use **Git Bash** (installed alongside Git for Windows) as your shell for this project — every command in this README then works exactly as written, with no translation needed.
+
+---
+
+## Installation
+
+Steps 1, 3, 4, and 6 below are identical on every OS. Step 2 (pinned Node version) and step 5 (viewing a file's contents) have OS-specific commands, shown separately.
+
+**1. Clone the repo**
+
+```bash
+git clone https://github.com/ReleaseGuardian/AI-Quality-Hub.git
+cd AI-Quality-Hub
+```
+
+**2. (optional) use the pinned Node version**
+
+| Shell | Command |
+|---|---|
+| macOS/Linux (`nvm`) | `nvm use` |
+| Windows (`nvm-windows`) | `nvm use 20` |
+| Windows (no `nvm`) | Skip this — just make sure your installed Node.js is `>= 20.0.0` (`node --version`) |
+
+**3. Install dependencies**
+
+```bash
+npm install
+```
+
+**4. Install Playwright's browser binaries (Chromium, Firefox, WebKit)**
+
+```bash
+npx playwright install
+```
+
+**5. Confirm `.env` exists and review it** (tracked in the repo with working defaults — all public demo endpoints, no real secrets — so this step is optional to get started)
+
+| Shell | Command |
+|---|---|
+| Git Bash / macOS / Linux | `cat .env` |
+| PowerShell | `Get-Content .env` |
+| cmd.exe | `type .env` |
+
+**6. Run the default test suite to confirm everything works**
+
+```bash
+npm test
+```
+
+If it finishes with `3 passed`, the install is good.
+
+---
+
+## Environment configuration
+
+Configuration lives in `.env` (tracked in the repo with working defaults) and `.env.example` (the template). Every setting below is a plain environment variable, read directly by `playwright.config.ts`, `global-setup.ts`, or application code — there's no separate config file format to learn.
+
+| Variable | Purpose | Default / example |
 |---|---|---|
-| Runner | `@cucumber/cucumber` | `@playwright/test` (via `playwright-bdd`) |
-| Language | JavaScript | TypeScript (strict) |
-| "World" / shared state | `features/support/world.js` (`this.page`, globals) | Playwright fixtures (`step-definitions/fixtures.ts`) |
-| Screenshots / video on failure | Custom code in `baseUtil.js` (`AttachScreenshotOnFailure`, `RetainVideoOnFailure`) | Native Playwright `use: { screenshot, video, trace }` — no custom code needed |
-| Parallelism | `cucumber.json` `parallel` setting, one process | Playwright workers (`fullyParallel: true`), each an isolated process |
-| Browser/device config | `BROWSER_NAME`/`DEVICE` env vars branch inside `LaunchBrowser()` | Same `BROWSER_NAME`/`DEVICE` env vars, now read directly in `playwright.config.ts` to build a single `ui` project (plus a separate `api` project) |
-| Reports | Cucumber HTML report only | Native Playwright HTML report (`npm run report`) |
+| `BROWSER_NAME` | Which browser engine the `ui` project uses — `chromium` \| `firefox` \| `webkit`. An unrecognized value throws a clear error at config-load time. | `chromium` |
+| `DEVICE` | Optional Playwright device-emulation preset name (e.g. `iPhone 13`). Takes priority over `VIEWPORT_WIDTH`/`VIEWPORT_HEIGHT` if set. | *(empty = off)* |
+| `HEADLESS` | Whether the browser runs headless. `HEADLESS=false` to watch it run. `--headed` on the CLI overrides this regardless of the value here. | `true` |
+| `SLOWMO` | Milliseconds of delay Playwright inserts between actions — useful for watching a headed run. | `0` |
+| `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` | Viewport size, used when `DEVICE` isn't set. | `1280` / `720` |
+| `VIDEO_RECORDING_CONDITION` | Playwright's `video` option — `off` \| `on` \| `retain-on-failure` \| `on-first-retry`. | `retain-on-failure` |
+| `SCREENSHOT_CONDITION` | Playwright's `screenshot` option — `off` \| `on` \| `only-on-failure`. | `only-on-failure` |
+| `TRACE_CONDITION` | Playwright's `trace` option — `off` \| `on` \| `retain-on-failure` \| `on-first-retry`. | `on-first-retry` |
+| `LOGIN_APP_URL` | Base URL for the UI login scenarios (`pages/login.page.ts`). | `https://practicetestautomation.com/practice-test-login/` |
+| `API_LOCATION` | Base URI for API objects extending `BaseApiClient` (e.g. `UsersApi`). **Must end with `/`.** | `https://fake-json-api.mock.beeceptor.com/` |
+| `TEST_ENVIRONMENT` | Selects which `testdata/<environment>/` folder the test data factory reads from. | `dev` |
+| `LOG_LEVEL` | log4js log level (`1`–`5`; see `utils/logger.ts`). | `4` |
+| `RETRIES` | Overrides Playwright's retry count. | `0` locally, `1` in CI |
+| `WORKERS` | Overrides Playwright's worker count. | unset locally, `2` in CI |
+| `MemberPortal_url`, `MP_userName`, `MP_password`, `AUTH_LOCATION` | Not currently read by any code — placeholders reserved for an upcoming Member Portal test target. | — |
+
+To point the suite at different values, either edit `.env` directly, or override a variable for a single run:
+
+| Shell | Command |
+|---|---|
+| Git Bash / macOS / Linux | `BROWSER_NAME=firefox npm test` |
+| PowerShell | `$env:BROWSER_NAME="firefox"; npm test` |
+| cmd.exe | `set BROWSER_NAME=firefox&& npm test` |
+
+---
 
 ## Project layout
 
@@ -21,124 +148,155 @@ features/
   ui/                     UI .feature files (run under the "ui" project - browser chosen via BROWSER_NAME)
   api/                    API .feature files (run under the "api" project, no browser launched)
 step-definitions/
-  fixtures.ts             The "World" replacement: custom Playwright fixtures + Given/When/Then/Before/After
+  fixtures.ts             Registers the worker-scoped `logger` fixture, produces Given/When/Then/Before/
+                           After via createBdd(), and defines the global Before hook (scenario logging,
+                           viewport/device report attachment)
   *.steps.ts              Step definitions, grouped by feature area
-pages/                    Page objects (login.page.ts) + pageFactory.ts, which constructs one of
-                          each page object per `new PageFactory(page)` call and exposes getXPage()
-                          getters - step definitions ask the factory for a page, not `new LoginPage(...)`
-apis/                     baseApiClient.ts (shared base holding a per-resource baseUri + get/post
-                          helpers, so resources can target different hosts) + one class per
-                          resource (users.api.ts) - the API-testing equivalent of pages/, built
-                          on Playwright's own `request` fixture (no axios)
-testdata/                 Test data factory: JSON fixtures per environment (dev/users.json) + a
-                          loader (testDataFactory.ts) that step definitions ask for data by key
-utils/                    logger, log cleanup (baseUtil.ts)
-playwright.config.ts      Projects, reporters, screenshot/video/trace config, bddgen config, retries/workers
-global-setup.ts           Runs once before all workers: loads .env, clears old logs
+pages/
+  login.page.ts            Page object - locators as class fields, methods for actions/assertions
+  pageFactory.ts            Constructs one of each page object per `new PageFactory(page)` call and
+                           exposes getXPage() getters - step definitions ask the factory for a page
+apis/
+  baseApiClient.ts          Shared base: stores a per-resource baseUri + Playwright's APIRequestContext
+  users.api.ts              One class per resource, extends BaseApiClient, builds its own URLs
+testdata/
+  dev/users.json            Environment-scoped JSON test data
+  testDataFactory.ts        Instance-based factory; one plain getXxxData() method per JSON file
+utils/
+  logger.ts                 log4js wrapper, one log file per worker process
+  baseUtil.ts                Log directory cleanup, used from global-setup.ts
+playwright.config.ts       Projects ("ui", "api"), reporters, screenshot/video/trace config, bddgen
+                           config, env-driven browser/retries/workers
+global-setup.ts            Runs once before all workers: loads .env, clears old logs
+tsconfig.json               TypeScript compiler options (strict, no emit - Playwright runs .ts directly)
 ```
 
-## Page objects and API objects
+---
 
-Both pages and API objects are constructed directly inside the step definition that needs them —
-neither is a Playwright fixture:
+## Architecture
 
-- **Pages** (`pages/*.page.ts`) — take a `Page`, expose UI actions (e.g. `LoginPage.login()`).
-  Step definitions go through `pages/pageFactory.ts`:
-  `const pageFactory = new PageFactory(page); await pageFactory.getLoginPage().login(...)` (see
-  `step-definitions/login.steps.ts`). `PageFactory`'s constructor instantiates every page object up
-  front, and one `getXPage()` getter exposes each. Add a new page by adding it to the constructor
-  and adding its getter.
-- **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`, which stores a
-  `baseUri` + Playwright's `APIRequestContext` (nothing else) — so different resources can target
-  different hosts, independent of any project-level `baseURL`. Each resource method builds its own
-  URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly (see
-  `UsersApi.getUsers()`) — URL-building lives at the service layer, not in a shared base helper. No
-  factory: step definitions just do `const usersApi = new UsersApi(request);` directly (see
-  `step-definitions/api.steps.ts`), using Playwright's built-in `request` fixture.
+### Page objects and API objects
 
-Both give every scenario a fresh, isolated instance — no shared mutable state between tests, which
-is what makes parallel workers and retries safe.
+Both pages and API objects are constructed directly inside the step definition that needs them — neither is a Playwright fixture:
 
-## Test data factory
+- **Pages** (`pages/*.page.ts`) — take a `Page`, expose UI actions (e.g. `LoginPage.login()`). Step definitions go through `pages/pageFactory.ts`:
+  ```ts
+  const pageFactory = new PageFactory(page);
+  await pageFactory.getLoginPage().login(username, password);
+  ```
+  (see `step-definitions/login.steps.ts`). `PageFactory`'s constructor instantiates every page object up front, and one `getXPage()` getter exposes each. Add a new page by adding it to the constructor and adding its getter.
 
-Test data (e.g. login credentials) lives in JSON under `testdata/<environment>/` (`testdata/dev/users.json`),
-keyed by a short name per case (`valid`, `invalidUsername`, `invalidPassword`, ...). The environment
-folder is selected by the `TEST_ENVIRONMENT` env var (defaults to `dev`), so pointing the suite at a
-different environment's data is a one-line env change, not a code change.
+- **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`, which stores a `baseUri` + Playwright's `APIRequestContext` (nothing else). Each resource method builds its own URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly — URL-building lives at the service layer, not in a shared base helper, so different resources can target entirely different hosts. No factory: step definitions just do
+  ```ts
+  const usersApi = new UsersApi(request);
+  const response = await usersApi.getUsers();
+  ```
+  (see `step-definitions/api.steps.ts`), using Playwright's built-in `request` fixture.
 
-`testdata/testDataFactory.ts` is instance-based (`new TestDataFactory()`), reads its environment from
-`process.env.TEST_ENVIRONMENT` in the constructor, and has one plainly-named method per JSON file
-that loads it via `require(...)` and returns the whole parsed file — e.g. `getLoginData()` returns
-all of `users.json`. Callers index into it by key themselves, e.g.
-`new TestDataFactory().getLoginData()['valid']` (see `step-definitions/login.steps.ts`). Deliberately
-untyped (no per-domain interfaces) to keep adding a new JSON file cheap — add a new data domain by
-adding the file under `testdata/<environment>/` plus a one-line `getXxxData()` method, no type
-declarations required.
+Both give every scenario a fresh, isolated instance — no shared mutable state between tests, which is what makes parallel workers and retries safe.
 
-## Parallelization and retries
+### Test data factory
 
-- `fullyParallel: true` schedules every scenario independently, not just every file — Playwright
-  distributes individual scenarios across workers.
-- `WORKERS` env var overrides the worker count (defaults: unset locally, `2` in CI).
-- `RETRIES` env var overrides the retry count (defaults: `0` locally, `1` in CI).
-- Because fixtures are test-scoped and hold no shared state, a retried scenario gets a brand-new
-  `page`/`usersApi`/etc., so retries don't inherit state from the failed attempt.
+Test data (e.g. login credentials) lives in JSON under `testdata/<environment>/` (`testdata/dev/users.json`), keyed by a short name per case (`valid`, `invalidUsername`, `invalidPassword`, ...). The environment folder is selected by the `TEST_ENVIRONMENT` env var (defaults to `dev`), so pointing the suite at a different environment's data is a one-line env change, not a code change.
+
+`testdata/testDataFactory.ts` is instance-based (`new TestDataFactory()`), reads its environment from `process.env.TEST_ENVIRONMENT` in the constructor, and has one plainly-named method per JSON file that loads it via `require(...)` and returns the whole parsed file — e.g. `getLoginData()` returns all of `users.json`. Callers index into it by key themselves, e.g. `new TestDataFactory().getLoginData()['valid']` (see `step-definitions/login.steps.ts`). Deliberately untyped (no per-domain interfaces) to keep adding a new JSON file cheap — add a new data domain by adding the file under `testdata/<environment>/` plus a one-line `getXxxData()` method.
+
+---
+
+## Running tests
+
+`npm run <script>` runs `bddgen` first (regenerating `.features-gen/` from the current `.feature`/step-definition files), then invokes Playwright.
+
+| Command | What it runs |
+|---|---|
+| `npm test` | All UI scenarios, browser from `BROWSER_NAME` (default `chromium`) |
+| `npm run test:ui` | Same as `npm test`, explicitly excluding anything tagged `@API` |
+| `npm run test:api` | API scenarios only (no browser launched) |
+| `npm run test:unit` | UI scenarios tagged `@UnitTest` only |
+| `npm run test:regression` | UI scenarios tagged `@Regression` only |
+| `npm run test:headed` | UI scenarios with a visible browser window (`--headed`) |
+| `npm run test:debug` | UI scenarios in Playwright's step-through debugger (`--debug`) |
+| `npm run test:ui-mode` | Opens Playwright's interactive UI mode (`--ui`) for exploring/re-running tests visually |
+| `npm run bddgen` | Regenerates `.features-gen/` from `.feature` files without running anything |
+| `npm run report` | Opens the last Playwright HTML report |
+| `npm run typecheck` (alias: `npm run lint`) | `tsc --noEmit` — type-checks the whole project, no build output |
+
+You can also drop straight to the Playwright CLI for anything not covered by a script, e.g.:
+
+```bash
+npx playwright test --project=ui --grep "invalid username"
+npx playwright test --project=api --project=ui   # both projects in one run
+```
+
+---
 
 ## Browser selection
 
-The `ui` project's browser engine and headed/headless mode are both decided by env vars in
-`.env`, not by CLI flags or hardcoded config:
+The `ui` project's browser engine and headed/headless mode are both decided by env vars in `.env`, not by CLI flags or hardcoded config:
 
-- `BROWSER_NAME` — `chromium` (default) | `firefox` | `webkit`. Read once in `playwright.config.ts`
-  to pick the Playwright `devices[...]` preset for the single `ui` project. An unrecognized value
-  throws a clear error at config-load time rather than silently falling back.
-- `HEADLESS` — defaults to headed off (`true`); set `HEADLESS=false` to watch the browser run.
-  `npm run test:headed` still works as a CLI override (`--headed` beats `.env` regardless of
-  `HEADLESS`).
-- `DEVICE` / `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` — optional emulation on top of whichever browser
-  `BROWSER_NAME` selected (unchanged from before).
+- `BROWSER_NAME` — `chromium` (default) | `firefox` | `webkit`. Read once in `playwright.config.ts` to pick the Playwright `devices[...]` preset for the single `ui` project. An unrecognized value throws a clear error at config-load time rather than silently falling back.
+- `HEADLESS` — defaults to headless (`true`); set `HEADLESS=false` to watch the browser run. `npm run test:headed` still works as a CLI override (`--headed` beats `.env` regardless of `HEADLESS`).
+- `DEVICE` / `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` — optional emulation on top of whichever browser `BROWSER_NAME` selected.
 
-To run against a different browser, edit `BROWSER_NAME` in `.env` (or export it inline, e.g.
-`BROWSER_NAME=firefox npm test`) — there's no `--project=firefox` flag anymore, since there's only
-one `ui` project.
+To run against a different browser, edit `BROWSER_NAME` in `.env` (or override it inline per the shell table above) — there's no `--project=firefox` flag anymore, since there's only one `ui` project.
 
-## Getting started
+---
 
-```bash
-npm install
-npx playwright install        # downloads browser binaries
-cp .env.example .env          # fill in real values as needed
-npm test                      # generates tests (bddgen) then runs the "ui" project (BROWSER_NAME, default chromium)
-```
+## Parallelization and retries
 
-## Scripts
+- `fullyParallel: true` schedules every scenario independently, not just every file — Playwright distributes individual scenarios across workers.
+- `WORKERS` env var overrides the worker count (defaults: unset locally, `2` in CI).
+- `RETRIES` env var overrides the retry count (defaults: `0` locally, `1` in CI).
+- Because page/API objects are constructed fresh per scenario and hold no shared state, a retried scenario gets a brand-new `page`/`UsersApi`/etc., so retries don't inherit state from the failed attempt.
 
-- `npm test` — UI scenarios, browser from `BROWSER_NAME` (default `chromium`)
-- `npm run test:api` — API scenarios (no browser launched)
-- `npm run test:unit` / `test:regression` — filtered by `@UnitTest` / `@Regression` tag
-- `npm run test:headed` / `test:debug` / `test:ui-mode` — local debugging
-- `npm run report` — opens the last Playwright HTML report
-- `npm run typecheck` — `tsc --noEmit`
+Example (multiple variables at once):
+
+| Shell | Command |
+|---|---|
+| Git Bash / macOS / Linux | `RETRIES=1 WORKERS=4 npm test` |
+| PowerShell | `$env:RETRIES=1; $env:WORKERS=4; npm test` |
+| cmd.exe | `set RETRIES=1&& set WORKERS=4&& npm test` |
+
+---
 
 ## Tags
 
-Gherkin tags on a `Scenario` (e.g. `@UnitTest`, `@Regression`, `@API`) are picked up automatically
-by `playwright-bdd` and become native Playwright test tags — no extra config needed. A scenario can
-carry more than one tag (e.g. `login.feature`'s "Successful login" scenario is both `@UnitTest` and
-`@Regression`).
+Gherkin tags on a `Scenario` (e.g. `@UnitTest`, `@Regression`, `@API`) are picked up automatically by `playwright-bdd` and become native Playwright test tags — no extra config needed. A scenario can carry more than one tag (e.g. `login.feature`'s "Successful login" scenario is both `@UnitTest` and `@Regression`).
 
-Filter by tag with `--grep`/`--grep-invert`, either via the `npm run test:unit` / `test:regression`
-scripts above, or directly:
+Filter by tag with `--grep`/`--grep-invert`, either via the `npm run test:unit` / `test:regression` scripts above, or directly:
 
 ```bash
 npx playwright test --grep @UnitTest
 npx playwright test --grep-invert @Regression
 ```
 
+---
+
+## Viewing reports
+
+- `npm run report` opens the native Playwright HTML report from the last run (`playwright-report/`, gitignored).
+- The `list` reporter prints pass/fail per scenario directly to the terminal as tests run.
+- On failure, screenshots/videos/traces are attached per `SCREENSHOT_CONDITION`/`VIDEO_RECORDING_CONDITION`/`TRACE_CONDITION` in `.env` — open a trace with `npx playwright show-trace <path-to-trace.zip>`.
+
+---
+
 ## Writing new tests
 
 1. Add a `.feature` file under `features/ui/` or `features/api/`.
 2. Add/extend a `*.steps.ts` file under `step-definitions/`, importing `Given/When/Then` **from `./fixtures`**, not from `playwright-bdd` directly (that's what wires up the custom fixtures below).
-3. If a step needs a new page object, API object, or shared fixture, add it under `pages/`,
-   `apis/`, or `step-definitions/fixtures.ts` respectively.
-4. Run `npm test` (it regenerates `.features-gen/` automatically via `bddgen`, which is gitignored).
+3. For a new UI flow: add a page object under `pages/*.page.ts`, then register it in `pages/pageFactory.ts` (constructor + `getXPage()` getter).
+4. For a new API resource: add a class under `apis/*.api.ts` extending `BaseApiClient`, and instantiate it directly in the step file (`new YourApi(request)`) — no factory or fixture needed.
+5. For new test data: add a JSON file under `testdata/<environment>/` and a one-line getter method on `TestDataFactory`.
+6. Run `npm test` (it regenerates `.features-gen/` automatically via `bddgen`, which is gitignored).
+
+---
+
+## Troubleshooting
+
+- **`Unknown BROWSER_NAME "..."` error on startup** — `BROWSER_NAME` in `.env` must be exactly `chromium`, `firefox`, or `webkit`.
+- **A UI test times out waiting on a locator** — check whether the target site (`LOGIN_APP_URL`, a public demo site) is rate-limiting repeated runs; re-run after a short wait.
+- **`tsc --noEmit` errors after pulling changes** — run `npm install` again; a dependency or type declaration may have changed.
+- **Browser binaries missing** — run `npx playwright install` again (this doesn't happen automatically on `npm install`).
+- **(Windows) `'VAR' is not recognized as an internal or external command`** — you used bash-style inline env vars (`VAR=value command`) in PowerShell or cmd.exe, which don't support that syntax. Use the PowerShell/cmd.exe equivalents shown throughout this doc, or switch to Git Bash.
+- **(Windows) A script silently no-ops or `&&` behaves oddly in cmd.exe** — prefer PowerShell or Git Bash over cmd.exe for anything beyond the single-line examples above; cmd.exe's quoting/chaining rules are more limited.
+- **(Windows) `npm install` fails on a native dependency build step** — make sure a recent Node.js LTS is installed (this project has no native/node-gyp dependencies itself, but a corrupted global npm cache can still cause this); try `npm cache clean --force` then `npm install` again.
