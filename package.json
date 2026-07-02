@@ -1,0 +1,39 @@
+{
+  "name": "playwright-bdd-ts",
+  "description": "Playwright BDD Test Framework (TypeScript, no Cucumber runtime)",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "bddgen": "bddgen",
+    "pretest": "npm run bddgen",
+    "test": "playwright test --project=ui",
+    "test:ui": "npm run bddgen && playwright test --project=ui --grep-invert @API",
+    "test:api": "npm run bddgen && playwright test --project=api",
+    "test:unit": "npm run bddgen && playwright test --project=ui --grep @UnitTest",
+    "test:regression": "npm run bddgen && playwright test --project=ui --grep @Regression",
+    "test:headed": "npm run bddgen && playwright test --project=ui --headed",
+    "test:debug": "npm run bddgen && playwright test --project=ui --debug",
+    "test:ui-mode": "npm run bddgen && playwright test --ui",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.56.1",
+    "dotenv": "^16.5.0",
+    "fs-extra": "^11.3.2",
+    "log4js": "^6.9.1",
+    "playwright": "^1.56.1",
+    "playwright-bdd": "^9.2.0"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

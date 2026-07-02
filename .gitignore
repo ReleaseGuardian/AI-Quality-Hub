@@ -1,0 +1,13 @@
+node_modules/
+.features-gen/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+videos/
+logs/
+*.log
+.env
+.env.local
+.claude/settings.local.json
+.DS_Store
