@@ -2,6 +2,7 @@ import path from 'path';
 import log4js from 'log4js';
 import { test as base, createBdd } from 'playwright-bdd';
 import { Logger } from './logger';
+import { PageFactory } from '../pages/pageFactory';
 
 /**
  * Custom Playwright fixtures are declared here, and Given/When/Then/Before/After are bound
@@ -10,17 +11,25 @@ import { Logger } from './logger';
  * Every step-definition file must import { Given, When, Then } from here (not from
  * 'playwright-bdd' directly), otherwise it won't have access to these fixtures.
  *
- * Page objects and API objects are not fixtures here - they're constructed directly where
- * needed (`new PageFactory(page)`, `new UsersApi(request)`), using Playwright's own `page`/
- * `request` fixtures underneath.
+ * API objects are not fixtures here - they're constructed directly where needed
+ * (`new UsersApi(request)`), using Playwright's own `request` fixture underneath.
  */
+
+type TestFixtures = {
+  /** One PageFactory per test, built from that test's own `page` fixture. */
+  pageFactory: PageFactory;
+};
 
 type WorkerFixtures = {
   /** One log4js logger per worker process, writing to logs/thread_<pid>.log. */
   logger: log4js.Logger;
 };
 
-export const test = base.extend<{}, WorkerFixtures>({
+export const test = base.extend<TestFixtures, WorkerFixtures>({
+  pageFactory: async ({ page }, use) => {
+    await use(new PageFactory(page));
+  },
+
   logger: [
     async ({}, use) => {
       const projectRoot = path.resolve(__dirname, '../');

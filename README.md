@@ -154,8 +154,8 @@ step-definitions/
                            from ../utils/fixtures
 pages/
   login.page.ts            Page object - locators as class fields, methods for actions/assertions
-  pageFactory.ts            Constructs one of each page object per `new PageFactory(page)` call and
-                           exposes getXPage() getters - step definitions ask the factory for a page
+  pageFactory.ts            One getXPage() getter per page, lazily constructing (and caching) it on
+                           first access - injected into steps as the `pageFactory` fixture
 apis/
   baseApiClient.ts          Shared base: resolves a baseUri per LOB via TestDataFactory +
                            stores Playwright's APIRequestContext
@@ -166,11 +166,11 @@ testdata/
                            one entry per LOB, read via TestDataFactory.getLobBaseUrls()
   testDataFactory.ts        Instance-based factory; one plain getXxxData() method per JSON file
 utils/
-  fixtures.ts               Registers the worker-scoped `logger` fixture, produces
-                           Given/When/Then/Before/After via createBdd(), and defines the
-                           global Before/After hooks (scenario start/PASS/FAIL logging,
-                           viewport/device report attachment) - every *.steps.ts file
-                           imports Given/When/Then from here
+  fixtures.ts               Registers the test-scoped `pageFactory` fixture and the
+                           worker-scoped `logger` fixture, produces Given/When/Then/Before/
+                           After via createBdd(), and defines the global Before/After hooks
+                           (scenario start/PASS/FAIL logging, viewport/device report
+                           attachment) - every *.steps.ts file imports Given/When/Then from here
   logger.ts                 log4js wrapper, one log file per worker process
   baseUtil.ts                Log directory cleanup, used from global-setup.ts
 playwright.config.ts       Projects ("ui", "api"), reporters, screenshot/video/trace config, bddgen
@@ -190,24 +190,25 @@ scripts/
 
 ### Page objects and API objects
 
-Both pages and API objects are constructed directly inside the step definition that needs them — neither is a Playwright fixture:
+Pages are provided via a Playwright fixture; API objects are constructed directly where needed:
 
-- **Pages** (`pages/*.page.ts`) — take a `Page`, expose UI actions (e.g. `LoginPage.login()`). Step definitions go through `pages/pageFactory.ts`:
+- **Pages** (`pages/*.page.ts`) — take a `Page`, expose UI actions (e.g. `LoginPage.login()`). `utils/fixtures.ts` registers a test-scoped `pageFactory` fixture (`async ({ page }, use) => { await use(new PageFactory(page)); }`), so every step in a scenario just destructures it:
   ```ts
-  const pageFactory = new PageFactory(page);
-  await pageFactory.getLoginPage().login(username, password);
+  Given('I navigate to the login page', async ({ pageFactory }) => {
+    await pageFactory.getLoginPage().goto();
+  });
   ```
-  (see `step-definitions/login.steps.ts`). `PageFactory`'s constructor instantiates every page object up front, and one `getXPage()` getter exposes each. Add a new page by adding it to the constructor and adding its getter.
+  (see `step-definitions/login.steps.ts`). Because it's test-scoped, **the same `PageFactory` instance is shared across every step in one scenario** — `pages/pageFactory.ts` lazily constructs and caches each page on first access (`this.loginPage ??= new LoginPage(this.page)`), so a page used by 3 different steps in the same scenario is only ever built once. Add a new page by adding a private field + a `getXPage()` getter to `PageFactory` — no changes needed anywhere `pageFactory` is already used.
 
-- **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`. Its constructor takes an `lob` (line of business) name and resolves the actual `baseUri` from `apis/lobBaseUrls.json` — an unrecognized LOB throws a clear error immediately rather than silently using the wrong host. Each resource method then builds its own URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly — URL-building lives at the service layer, not in a shared base helper. No factory: step definitions just do
+- **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`. Its constructor takes an `lob` (line of business) name and resolves the actual `baseUri` from `testdata/<environment>/lobBaseUrls.json` (via `TestDataFactory`) — an unrecognized LOB throws a clear error immediately rather than silently using the wrong host. Each resource method then builds its own URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly — URL-building lives at the service layer, not in a shared base helper. No factory, and not a fixture: step definitions just do
   ```ts
   const usersApi = new UsersApi(request);              // uses the LOB env var, or 'default'
   const usersApiForGlobex = new UsersApi(request, 'globex'); // explicit LOB override
   const response = await usersApi.getUsers();
   ```
-  (see `step-definitions/api.steps.ts`), using Playwright's built-in `request` fixture. Every resource constructor should follow this same pattern — `constructor(request, lob = process.env.LOB ?? 'default')` — so a run defaults to one LOB (set via the `LOB` env var) but any step can target a specific LOB explicitly when needed. Adding LOB #31 is a one-line addition to `lobBaseUrls.json`, no code change.
+  (see `step-definitions/api.steps.ts`), using Playwright's built-in `request` fixture. Every resource constructor should follow this same pattern — `constructor(request, lob = process.env.LOB ?? 'default')` — so a run defaults to one LOB (set via the `LOB` env var) but any step can target a specific LOB explicitly when needed. Adding LOB #31 is a one-line addition to `testdata/<environment>/lobBaseUrls.json`, no code change.
 
-Both give every scenario a fresh, isolated instance — no shared mutable state between tests, which is what makes parallel workers and retries safe.
+Both give every scenario a fresh, isolated instance — no shared mutable state *between* tests, which is what makes parallel workers and retries safe. (Sharing *within* one scenario, via the `pageFactory` fixture, is safe precisely because it's rebuilt fresh for every test/retry — see [Parallelization and retries](#parallelization-and-retries).)
 
 ### Test data factory
 
