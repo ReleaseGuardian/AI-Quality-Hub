@@ -215,6 +215,11 @@ Test data (e.g. login credentials) lives in JSON under `testdata/<environment>/`
 
 `testdata/testDataFactory.ts` is instance-based (`new TestDataFactory()`), reads its environment from `process.env.TEST_ENVIRONMENT` in the constructor, and has one plainly-named method per JSON file that loads it via `require(...)` and returns the whole parsed file — e.g. `getLoginData()` returns all of `users.json`. Callers index into it by key themselves, e.g. `new TestDataFactory().getLoginData()['valid']` (see `step-definitions/login.steps.ts`). Deliberately untyped (no per-domain interfaces) to keep adding a new JSON file cheap — add a new data domain by adding the file under `testdata/<environment>/` plus a one-line `getXxxData()` method.
 
+Scaling to many test cases (e.g. 30+ login credential sets for different scenarios) needs **no
+code change at all** — it's purely adding more keys to the JSON file, referenced by name from
+`.feature` files (`When I log in as the "mfaEnabledUser" test user`). `login.steps.ts` already
+throws a clear error if a `.feature` file references a key that doesn't exist.
+
 ---
 
 ## Running tests
