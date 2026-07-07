@@ -13,6 +13,7 @@ It covers both **UI testing** (Page Object Model, driven by a `PageFactory`) and
 - [Installation](#installation)
 - [Environment configuration](#environment-configuration)
 - [Project layout](#project-layout)
+- [Naming conventions](#naming-conventions)
 - [Architecture](#architecture)
   - [Page objects and API objects](#page-objects-and-api-objects)
   - [Test data factory](#test-data-factory)
@@ -35,7 +36,8 @@ It covers both **UI testing** (Page Object Model, driven by a `PageFactory`) and
 | [`playwright`](https://playwright.dev/) | Browser binaries / driver used by `@playwright/test` |
 | [`playwright-bdd`](https://vitalets.github.io/playwright-bdd/) | Compiles Gherkin `.feature` files into native Playwright spec files (`bddgen`), and binds `Given/When/Then` to Playwright fixtures via `createBdd()` |
 | [`typescript`](https://www.typescriptlang.org/) | Language — strict mode, no build step needed (Playwright runs `.ts` files directly) |
-| [`dotenv`](https://www.npmjs.com/package/dotenv) | Loads `.env` into `process.env` |
+| [`dotenv`](https://www.npmjs.com/package/dotenv) | Loads `.env.<environment>` then `.env` into `process.env` |
+| [`cross-env`](https://www.npmjs.com/package/cross-env) | Sets env vars inline in npm scripts (e.g. `execute-ui-tests-qa`) the same way on Windows, macOS, and Linux |
 | [`log4js`](https://www.npmjs.com/package/log4js) | Per-worker file logging (`logs/thread_<pid>.log`) |
 | [`fs-extra`](https://www.npmjs.com/package/fs-extra) | Used for recursively clearing the `logs/` directory before a run |
 | [`eslint`](https://eslint.org/) + [`typescript-eslint`](https://typescript-eslint.io/) | Linting (`eslint.config.js`, flat config) — separate from `typecheck` |
@@ -93,13 +95,13 @@ npm install
 npx playwright install
 ```
 
-**5. Confirm `.env` exists and review it** (tracked in the repo with working defaults — all public demo endpoints, no real secrets — so this step is optional to get started)
+**5. Confirm `.env`, `.env.dev`, `.env.qa` exist and review them** (all tracked in the repo with working defaults — public demo endpoints, no real secrets — so this step is optional to get started)
 
 | Shell | Command |
 |---|---|
-| Git Bash / macOS / Linux | `cat .env` |
-| PowerShell | `Get-Content .env` |
-| cmd.exe | `type .env` |
+| Git Bash / macOS / Linux | `cat .env .env.dev` |
+| PowerShell | `Get-Content .env, .env.dev` |
+| cmd.exe | `type .env .env.dev` |
 
 **6. Run the default test suite to confirm everything works**
 
@@ -113,27 +115,41 @@ If it finishes with `3 passed`, the install is good.
 
 ## Environment configuration
 
-Configuration lives in `.env` (tracked in the repo with working defaults) and `.env.example` (the template). Every setting below is a plain environment variable, read directly by `playwright.config.ts`, `global-setup.ts`, or application code — there's no separate config file format to learn.
+Configuration is split across two kinds of files, both tracked in the repo with working defaults (public demo endpoints, no real secrets):
 
-| Variable | Purpose | Default / example |
-|---|---|---|
-| `BROWSER_NAME` | Which browser engine the `ui` project uses — `chromium` \| `firefox` \| `webkit`. An unrecognized value throws a clear error at config-load time. | `chromium` |
-| `DEVICE` | Optional Playwright device-emulation preset name (e.g. `iPhone 13`). Takes priority over `VIEWPORT_WIDTH`/`VIEWPORT_HEIGHT` if set. | *(empty = off)* |
-| `HEADLESS` | Whether the browser runs headless. `HEADLESS=false` to watch it run. `--headed` on the CLI overrides this regardless of the value here. | `true` |
-| `SLOWMO` | Milliseconds of delay Playwright inserts between actions — useful for watching a headed run. Non-numeric values throw a clear error at config-load time. | `0` |
-| `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` | Viewport size, used when `DEVICE` isn't set. Non-numeric values throw a clear error at config-load time. | `1280` / `720` |
-| `VIDEO_RECORDING_CONDITION` | Playwright's `video` option — `off` \| `on` \| `retain-on-failure` \| `on-first-retry`. | `retain-on-failure` |
-| `SCREENSHOT_CONDITION` | Playwright's `screenshot` option — `off` \| `on` \| `only-on-failure`. | `only-on-failure` |
-| `TRACE_CONDITION` | Playwright's `trace` option — `off` \| `on` \| `retain-on-failure` \| `on-first-retry`. | `on-first-retry` |
-| `LOGIN_APP_URL` | Base URL for the UI login scenarios (`pages/login.page.ts`). | `https://practicetestautomation.com/practice-test-login/` |
-| `LOB` | Which LOB's base URL (from `apis/lobBaseUrls.json`) API objects use by default. Unknown values throw a clear error at request time. | `default` |
-| `TEST_ENVIRONMENT` | Selects which `testdata/<environment>/` folder the test data factory reads from. | `dev` |
-| `LOG_LEVEL` | log4js log level (`1`–`5`; see `utils/logger.ts`). | `4` |
-| `RETRIES` | Overrides Playwright's retry count. Non-numeric values throw a clear error at config-load time. | `0` locally, `1` in CI |
-| `WORKERS` | Overrides Playwright's worker count. Non-numeric values throw a clear error at config-load time. | unset locally, `2` in CI |
-| `MemberPortal_url`, `MP_userName`, `MP_password`, `AUTH_LOCATION` | Not currently read by any code — placeholders reserved for an upcoming Member Portal test target. | — |
+- **`.env`** — settings that are the same regardless of which environment you're testing against (browser, headless, retries, log level, ...).
+- **`.env.dev`** / **`.env.qa`** — settings that actually differ per environment (`API_BASE_URL`, `LOGIN_APP_URL`, `TEST_ENVIRONMENT`). Only one of these loads per run.
 
-To point the suite at different values, either edit `.env` directly, or override a variable for a single run:
+`playwright.config.ts` decides which per-environment file to load from the `TEST_ENVIRONMENT` value already present in the shell (defaulting to `dev` if unset), loads that file first, then loads the shared `.env` on top — `dotenv` never overrides a variable that's already set, so `.env` only fills in whatever the per-environment file didn't provide. To add a third environment (e.g. `staging`), add `.env.staging` with the same three keys — no code change needed.
+
+| Variable | Purpose | Default / example | Lives in |
+|---|---|---|---|
+| `BROWSER_NAME` | Which browser engine the `ui` project uses — `chromium` \| `firefox` \| `webkit`. An unrecognized value throws a clear error at config-load time. | `chromium` | `.env` |
+| `DEVICE` | Optional Playwright device-emulation preset name (e.g. `iPhone 13`). Takes priority over `VIEWPORT_WIDTH`/`VIEWPORT_HEIGHT` if set. | *(empty = off)* | `.env` |
+| `HEADLESS` | Whether the browser runs headless. `HEADLESS=false` to watch it run. `--headed` on the CLI overrides this regardless of the value here. | `true` | `.env` |
+| `SLOWMO` | Milliseconds of delay Playwright inserts between actions — useful for watching a headed run. Non-numeric values throw a clear error at config-load time. | `0` | `.env` |
+| `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` | Viewport size, used when `DEVICE` isn't set. Non-numeric values throw a clear error at config-load time. | `1280` / `720` | `.env` |
+| `VIDEO_RECORDING_CONDITION` | Playwright's `video` option — `off` \| `on` \| `retain-on-failure` \| `on-first-retry`. | `retain-on-failure` | `.env` |
+| `SCREENSHOT_CONDITION` | Playwright's `screenshot` option — `off` \| `on` \| `only-on-failure`. | `only-on-failure` | `.env` |
+| `TRACE_CONDITION` | Playwright's `trace` option — `off` \| `on` \| `retain-on-failure` \| `on-first-retry`. | `on-first-retry` | `.env` |
+| `LOG_LEVEL` | log4js log level (`1`–`5`; see `utils/logger.ts`). | `4` | `.env` |
+| `RETRIES` | Overrides Playwright's retry count. Non-numeric values throw a clear error at config-load time. | `0` locally, `1` in CI | `.env` |
+| `WORKERS` | Overrides Playwright's worker count. Non-numeric values throw a clear error at config-load time. | unset locally, `2` in CI | `.env` |
+| `MemberPortal_url`, `MP_userName`, `MP_password`, `AUTH_LOCATION` | Not currently read by any code — placeholders reserved for an upcoming Member Portal test target. | — | `.env` |
+| `TEST_ENVIRONMENT` | Which per-environment file loads, and which `testdata/<environment>/` folder the test data factory reads from. | `dev` | `.env.dev` / `.env.qa` |
+| `LOGIN_APP_URL` | Base URL for the UI login scenarios (`pages/login.page.ts`). | `https://practicetestautomation.com/practice-test-login/` | `.env.dev` / `.env.qa` |
+| `API_BASE_URL` | Base URL every API object (`apis/*.api.ts`) targets, via `BaseApiClient`. Missing values throw a clear error at request time. | `https://jsonplaceholder.typicode.com/` | `.env.dev` / `.env.qa` |
+| `APP_BEARER_TOKEN` | Not currently read by any code — a placeholder token source for the first endpoint that needs bearer-token auth. `BaseApiClient.getAuthHeaders(accessToken)` takes the token as a parameter rather than reading this var itself, so a caller decides whether it comes from here, a login step, or somewhere else. | *(empty)* | `.env.dev` / `.env.qa` |
+
+To run against QA instead of the default `dev`:
+
+| Shell | Command |
+|---|---|
+| Git Bash / macOS / Linux | `TEST_ENVIRONMENT=qa npm test` |
+| PowerShell | `$env:TEST_ENVIRONMENT="qa"; npm test` |
+| cmd.exe | `set TEST_ENVIRONMENT=qa&& npm test` |
+
+To point the suite at different values otherwise, either edit `.env`/`.env.dev`/`.env.qa` directly, or override a variable for a single run:
 
 | Shell | Command |
 |---|---|
@@ -157,13 +173,14 @@ pages/
   pageFactory.ts            One getXPage() getter per page, lazily constructing (and caching) it on
                            first access - injected into steps as the `pageFactory` fixture
 apis/
-  baseApiClient.ts          Shared base: resolves a baseUri per LOB via TestDataFactory +
-                           stores Playwright's APIRequestContext
+  baseApiClient.ts          Shared base: reads the API_BASE_URL env var + stores Playwright's
+                           APIRequestContext
   users.api.ts              One class per resource, extends BaseApiClient, builds its own URLs
 testdata/
   dev/users.json            Environment-scoped JSON test data (login credentials)
-  dev/lobBaseUrls.json      Environment-scoped LOB (line of business) name -> base URL lookup,
-                           one entry per LOB, read via TestDataFactory.getLobBaseUrls()
+  qa/users.json             Same shape, for TEST_ENVIRONMENT=qa
+  dev/createUserPayloads.json  API createUser() request bodies, keyed by case
+  qa/createUserPayloads.json   Same shape, for TEST_ENVIRONMENT=qa
   testDataFactory.ts        Instance-based factory; one plain getXxxData() method per JSON file
 utils/
   fixtures.ts               Registers the test-scoped `pageFactory` fixture and the
@@ -186,6 +203,29 @@ scripts/
 
 ---
 
+## Naming conventions
+
+Enforced automatically by `npm run lint` (`@typescript-eslint/naming-convention` in `eslint.config.js`), not just documentation — a violation fails lint the same as any other rule.
+
+| What | Convention | Example |
+|---|---|---|
+| Classes, interfaces, type aliases, enums | `PascalCase` | `PageFactory`, `BaseApiClient`, `TestFixtures` |
+| Variables, functions, methods, parameters | `camelCase` | `getLoginData()`, `dataFactory`, `screenshotMode` |
+| Class fields, incl. `private` ones | `camelCase`, no leading underscore | `private loginPage?: LoginPage` (not `_loginPage`) — the `private` keyword is already the privacy signal |
+| Module-level fixed-literal constants | `SCREAMING_SNAKE_CASE` | `TEST_DATA_PATH` in `testDataFactory.ts` |
+| Any other `const`, even derived/computed ones | `camelCase` | `browserName`, `reportTimestamp` — stays camelCase even though it's a `const`, because the value isn't a hardcoded literal |
+| Env vars (`.env`/`.env.dev`/`.env.qa`) | `SCREAMING_SNAKE_CASE` | `BROWSER_NAME`, `TEST_ENVIRONMENT` |
+| Files | `camelCase.ts`, domain-suffixed where applicable | `pageFactory.ts`, `login.page.ts`, `users.api.ts`, `login.steps.ts` |
+| Folders | `kebab-case` (a single word is trivially kebab-case) | `step-definitions/`, `apis/`, `pages/` |
+| Object/type literal property names | Not enforced | `Authorization` header, JSON API field names — these often have to match an external contract, not our own convention |
+| `Given`/`When`/`Then`/`Before`/`After`/`BeforeAll`/`AfterAll` | `PascalCase` (explicit exception) | Destructured from `createBdd()` in `utils/fixtures.ts` — intentionally mirrors Gherkin keywords rather than following the general camelCase rule |
+
+Two conventions that aren't (and can't easily be) lint-enforced, so they rely on code review instead:
+- **Booleans** — prefix with `is`/`has`/`should`/`can` (e.g. `isValid`, `hasError`) so the name reads as a yes/no question. Not currently exercised anywhere in this codebase — apply it the first time a boolean-typed variable/property shows up.
+- **Return types** — don't annotate when TypeScript can already infer it unambiguously (established by removing several redundant `: Promise<void>`, `: LoginPage` annotations earlier in this project's history); do annotate at exported/public API boundaries where the inferred type might not be obvious to a caller.
+
+---
+
 ## Architecture
 
 ### Page objects and API objects
@@ -200,13 +240,12 @@ Pages are provided via a Playwright fixture; API objects are constructed directl
   ```
   (see `step-definitions/login.steps.ts`). Because it's test-scoped, **the same `PageFactory` instance is shared across every step in one scenario** — `pages/pageFactory.ts` lazily constructs and caches each page on first access (`this.loginPage ??= new LoginPage(this.page)`), so a page used by 3 different steps in the same scenario is only ever built once. Add a new page by adding a private field + a `getXPage()` getter to `PageFactory` — no changes needed anywhere `pageFactory` is already used.
 
-- **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`. Its constructor takes an `lob` (line of business) name and resolves the actual `baseUri` from `testdata/<environment>/lobBaseUrls.json` (via `TestDataFactory`) — an unrecognized LOB throws a clear error immediately rather than silently using the wrong host. Each resource method then builds its own URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly — URL-building lives at the service layer, not in a shared base helper. No factory, and not a fixture: step definitions just do
+- **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`. Its constructor reads the single `API_BASE_URL` env var directly — a missing value throws a clear error immediately rather than silently sending requests to `undefined`. Each resource method then builds its own URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly — URL-building lives at the service layer, not in a shared base helper. No factory, and not a fixture: step definitions just do
   ```ts
-  const usersApi = new UsersApi(request);              // uses the LOB env var, or 'default'
-  const usersApiForGlobex = new UsersApi(request, 'globex'); // explicit LOB override
+  const usersApi = new UsersApi(request);
   const response = await usersApi.getUsers();
   ```
-  (see `step-definitions/api.steps.ts`), using Playwright's built-in `request` fixture. Every resource constructor should follow this same pattern — `constructor(request, lob = process.env.LOB ?? 'default')` — so a run defaults to one LOB (set via the `LOB` env var) but any step can target a specific LOB explicitly when needed. Adding LOB #31 is a one-line addition to `testdata/<environment>/lobBaseUrls.json`, no code change.
+  (see `step-definitions/api.steps.ts`), using Playwright's built-in `request` fixture. Since `UsersApi` adds no constructor of its own, it inherits `BaseApiClient`'s directly — a new resource class only needs its own constructor if it has extra setup beyond what the base class already does. If a future endpoint needs bearer-token auth, call the inherited `this.getAuthHeaders(accessToken)` (throws if `accessToken` is falsy) and spread it into that method's `headers` — the token itself is passed in by the caller (e.g. from `APP_BEARER_TOKEN`, or a token obtained via a login step), not read from an env var inside `BaseApiClient` — not implemented on `UsersApi` today since neither of its methods need auth.
 
 Both give every scenario a fresh, isolated instance — no shared mutable state *between* tests, which is what makes parallel workers and retries safe. (Sharing *within* one scenario, via the `pageFactory` fixture, is safe precisely because it's rebuilt fresh for every test/retry — see [Parallelization and retries](#parallelization-and-retries).)
 
@@ -214,7 +253,7 @@ Both give every scenario a fresh, isolated instance — no shared mutable state 
 
 Test data (e.g. login credentials) lives in JSON under `testdata/<environment>/` (`testdata/dev/users.json`), keyed by a short name per case (`valid`, `invalidUsername`, `invalidPassword`, ...). The environment folder is selected by the `TEST_ENVIRONMENT` env var (defaults to `dev`), so pointing the suite at a different environment's data is a one-line env change, not a code change.
 
-`testdata/testDataFactory.ts` is instance-based (`new TestDataFactory()`), reads its environment from `process.env.TEST_ENVIRONMENT` in the constructor, and has one plainly-named method per JSON file that loads it via `require(...)` and returns the whole parsed file — e.g. `getLoginData()` returns all of `users.json`. Callers index into it by key themselves, e.g. `new TestDataFactory().getLoginData()['valid']` (see `step-definitions/login.steps.ts`). Deliberately untyped (no per-domain interfaces) to keep adding a new JSON file cheap — add a new data domain by adding the file under `testdata/<environment>/` plus a one-line `getXxxData()` method.
+`testdata/testDataFactory.ts` is instance-based (`new TestDataFactory()`), reads its environment from `process.env.TEST_ENVIRONMENT` in the constructor, and has one plainly-named method per JSON file that loads it via `require(...)` and returns the whole parsed file — e.g. `getLoginData()` returns all of `users.json`. Callers index into it by key themselves, e.g. `new TestDataFactory().getLoginData()['valid']` (see `step-definitions/login.steps.ts`). Deliberately untyped (no per-domain interfaces) to keep adding a new JSON file cheap — add a new data domain by adding the file under `testdata/<environment>/` plus a one-line `getXxxData()` method. Same pattern for API request bodies — `getCreateUserPayloads()['valid']` reads `createUserPayloads.json` for `UsersApi.createUser()` (see `step-definitions/api.steps.ts`), instead of hardcoding the payload inline in the step.
 
 Scaling to many test cases (e.g. 30+ login credential sets for different scenarios) needs **no
 code change at all** — it's purely adding more keys to the JSON file, referenced by name from
@@ -229,14 +268,12 @@ throws a clear error if a `.feature` file references a key that doesn't exist.
 
 | Command | What it runs |
 |---|---|
-| `npm test` | All UI scenarios, browser from `BROWSER_NAME` (default `chromium`) |
-| `npm run test:ui` | Same as `npm test`, explicitly excluding anything tagged `@API` |
-| `npm run test:api` | API scenarios only (no browser launched) |
-| `npm run test:unit` | UI scenarios tagged `@UnitTest` only |
-| `npm run test:regression` | UI scenarios tagged `@Regression` only |
-| `npm run test:headed` | UI scenarios with a visible browser window (`--headed`) |
-| `npm run test:debug` | UI scenarios in Playwright's step-through debugger (`--debug`) |
-| `npm run test:ui-mode` | Opens Playwright's interactive UI mode (`--ui`) for exploring/re-running tests visually |
+| `npm test` | All UI scenarios, browser from `BROWSER_NAME` (default `chromium`), against whichever environment `TEST_ENVIRONMENT` already resolves to (`dev` if unset) |
+| `npm run execute-ui-tests-dev` / `npm run execute-ui-tests-qa` | Same as `npm test`, explicitly against `dev` / `qa` (sets `TEST_ENVIRONMENT` for you via `cross-env`, so it works the same on every shell/OS) |
+| `npm run execute-api-tests` | API scenarios only (no browser launched) |
+| `npm run execute-api-tests-dev` / `npm run execute-api-tests-qa` | Same as `npm run execute-api-tests`, explicitly against `dev` / `qa` |
+| `npm run execute-unit-tests` | UI scenarios tagged `@UnitTest` only |
+| `npm run execute-regression-tests` | UI scenarios tagged `@Regression` only |
 | `npm run bddgen` | Regenerates `.features-gen/` from `.feature` files without running anything |
 | `npm run report` | Opens the most recent Playwright HTML report (each run gets its own timestamped folder) |
 | `npm run typecheck` | `tsc --noEmit` — type-checks the whole project, no build output |
@@ -247,6 +284,9 @@ You can also drop straight to the Playwright CLI for anything not covered by a s
 ```bash
 npx playwright test --project=ui --grep "invalid username"
 npx playwright test --project=api --project=ui   # both projects in one run
+npx playwright test --project=ui --headed        # visible browser window
+npx playwright test --project=ui --debug         # step-through debugger
+npx playwright test --ui                         # interactive UI mode
 ```
 
 ---
@@ -256,7 +296,7 @@ npx playwright test --project=api --project=ui   # both projects in one run
 The `ui` project's browser engine and headed/headless mode are both decided by env vars in `.env`, not by CLI flags or hardcoded config:
 
 - `BROWSER_NAME` — `chromium` (default) | `firefox` | `webkit`. Read once in `playwright.config.ts` to pick the Playwright `devices[...]` preset for the single `ui` project. An unrecognized value throws a clear error at config-load time rather than silently falling back.
-- `HEADLESS` — defaults to headless (`true`); set `HEADLESS=false` to watch the browser run. `npm run test:headed` still works as a CLI override (`--headed` beats `.env` regardless of `HEADLESS`).
+- `HEADLESS` — defaults to headless (`true`); set `HEADLESS=false` to watch the browser run. `npx playwright test --project=ui --headed` still works as a CLI override (`--headed` beats `.env` regardless of `HEADLESS`).
 - `DEVICE` / `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` — optional emulation on top of whichever browser `BROWSER_NAME` selected.
 
 To run against a different browser, edit `BROWSER_NAME` in `.env` (or override it inline per the shell table above) — there's no `--project=firefox` flag anymore, since there's only one `ui` project.
@@ -285,7 +325,7 @@ Example (multiple variables at once):
 
 Gherkin tags on a `Scenario` (e.g. `@UnitTest`, `@Regression`, `@API`) are picked up automatically by `playwright-bdd` and become native Playwright test tags — no extra config needed. A scenario can carry more than one tag (e.g. `login.feature`'s "Successful login" scenario is both `@UnitTest` and `@Regression`).
 
-Filter by tag with `--grep`/`--grep-invert`, either via the `npm run test:unit` / `test:regression` scripts above, or directly:
+Filter by tag with `--grep`/`--grep-invert`, either via the `npm run execute-unit-tests` / `execute-regression-tests` scripts above, or directly:
 
 ```bash
 npx playwright test --grep @UnitTest
@@ -328,7 +368,7 @@ Set `LOG_LEVEL` in `.env` to control verbosity (see the [environment configurati
 1. Add a `.feature` file under `features/ui/` or `features/api/`.
 2. Add/extend a `*.steps.ts` file under `step-definitions/`, importing `Given/When/Then` **from `../utils/fixtures`**, not from `playwright-bdd` directly (that's what wires up the custom fixtures below).
 3. For a new UI flow: add a page object under `pages/*.page.ts`, then register it in `pages/pageFactory.ts` (constructor + `getXPage()` getter).
-4. For a new API resource: add a class under `apis/*.api.ts` extending `BaseApiClient` (constructor takes `request` and an optional `lob`, defaulting to `process.env.LOB ?? 'default'`), and instantiate it directly in the step file (`new YourApi(request)`) — no factory or fixture needed. For a new LOB, add its base URL to `apis/lobBaseUrls.json`.
+4. For a new API resource: add a class under `apis/*.api.ts` extending `BaseApiClient` (no constructor needed unless the resource has extra setup), and instantiate it directly in the step file (`new YourApi(request)`) — no factory or fixture needed. All resources share the single `API_BASE_URL` env var.
 5. For new test data: add a JSON file under `testdata/<environment>/` and a one-line getter method on `TestDataFactory`.
 6. Run `npm test` (it regenerates `.features-gen/` automatically via `bddgen`, which is gitignored).
 7. Before committing, run `npm run typecheck` and `npm run lint` — neither runs automatically as part of `npm test`.
@@ -338,7 +378,7 @@ Set `LOG_LEVEL` in `.env` to control verbosity (see the [environment configurati
 ## Troubleshooting
 
 - **`Unknown BROWSER_NAME "..."` error on startup** — `BROWSER_NAME` in `.env` must be exactly `chromium`, `firefox`, or `webkit`.
-- **`Unknown LOB "..."` error** — the LOB name (from the `LOB` env var or an explicit constructor argument, e.g. `new UsersApi(request, 'globex')`) doesn't have an entry in `apis/lobBaseUrls.json`. Add it there.
+- **`API_BASE_URL is not set` error** — add `API_BASE_URL` to `.env` (see [Environment configuration](#environment-configuration)).
 - **Invalid `RETRIES`/`WORKERS`/`SLOWMO`/`VIEWPORT_WIDTH`/`VIEWPORT_HEIGHT`** — these must be plain numbers; a non-numeric value throws a clear error at config-load time (same as `BROWSER_NAME`) instead of silently misbehaving.
 - **`No test user "..." found in testdata/<env>/users.json`** — the key used in a `.feature` file's `When I log in as the "..." test user` step doesn't exist in `testdata/<TEST_ENVIRONMENT>/users.json`. Check the JSON file's keys and `TEST_ENVIRONMENT` match.
 - **A UI test times out waiting on a locator** — check whether the target site (`LOGIN_APP_URL`, a public demo site) is rate-limiting repeated runs; re-run after a short wait.

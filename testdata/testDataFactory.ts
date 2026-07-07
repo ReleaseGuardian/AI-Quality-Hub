@@ -19,10 +19,10 @@ export class TestDataFactory {
     return JSON.parse(JSON.stringify(data));
   }
 
-  getLobBaseUrls() {
+  getCreateUserPayloads() {
     // require() caches the module - deep-clone before returning, so a test that mutates
     // its result can't leak that mutation into other tests sharing this worker process.
-    const data = require(TEST_DATA_PATH + this.environment + '/lobBaseUrls.json');
+    const data = require(TEST_DATA_PATH + this.environment + '/createUserPayloads.json');
     return JSON.parse(JSON.stringify(data));
   }
 }

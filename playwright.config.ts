@@ -2,6 +2,13 @@ import { defineConfig, devices, type Project } from '@playwright/test';
 import { defineBddConfig } from 'playwright-bdd';
 import dotenv from 'dotenv';
 
+// TEST_ENVIRONMENT picks which per-environment file (.env.dev, .env.qa, ...) loads first -
+// it must come from the shell (e.g. `TEST_ENVIRONMENT=qa npm test`) since nothing has been
+// loaded from a file yet at this point. dotenv.config() never overrides a variable that's
+// already set, so loading the shared .env second only fills in what the per-environment
+// file didn't already provide (BROWSER_NAME, RETRIES, LOG_LEVEL, ...).
+const testEnvironment = process.env.TEST_ENVIRONMENT?.trim() || 'dev';
+dotenv.config({ path: `.env.${testEnvironment}` });
 dotenv.config();
 
 const testDir = defineBddConfig({

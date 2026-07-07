@@ -18,6 +18,12 @@ import { PageFactory } from '../pages/pageFactory';
 type TestFixtures = {
   /** One PageFactory per test, built from that test's own `page` fixture. */
   pageFactory: PageFactory;
+  /**
+   * Plain bag for passing data between a scenario's own Given/When/Then steps (e.g. a
+   * payload built in Given, a response captured in When, read back in Then) - fresh empty
+   * object per test, deliberately untyped since each scenario stores whatever it needs.
+   */
+  apiContext: Record<string, unknown>;
 };
 
 type WorkerFixtures = {
@@ -28,6 +34,10 @@ type WorkerFixtures = {
 export const test = base.extend<TestFixtures, WorkerFixtures>({
   pageFactory: async ({ page }, use) => {
     await use(new PageFactory(page));
+  },
+
+  apiContext: async ({}, use) => {
+    await use({});
   },
 
   logger: [
