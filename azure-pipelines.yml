@@ -1,0 +1,70 @@
+# Sample Azure Pipelines config for this Playwright BDD framework.
+# Code is hosted on GitLab - connect this pipeline to the GitLab repo via an Azure DevOps
+# "external Git repository" service connection; the pipeline itself doesn't need to know
+# where the source lives beyond that.
+#
+# Jobs run inside Microsoft's official Playwright Docker image, which ships with the exact
+# browser binaries this project's @playwright/test version needs already installed - so no
+# job spends time on `npx playwright install`. Keep the image tag's version in lockstep with
+# @playwright/test's version in package.json.
+
+trigger:
+  branches:
+    include:
+      - main
+
+variables:
+  # playwright.config.ts reads CI to default RETRIES=1 and WORKERS=2 - set explicitly here
+  # rather than assuming Azure Pipelines sets it the way GitLab CI does.
+  CI: 'true'
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Quality
+    displayName: 'Typecheck and lint'
+    jobs:
+      - job: TypecheckAndLint
+        container: mcr.microsoft.com/playwright:v1.56.1-jammy
+        steps:
+          - script: npm ci
+            displayName: 'Install dependencies'
+          - script: npm run typecheck
+            displayName: 'Type check'
+          - script: npm run lint
+            displayName: 'Lint'
+
+  - stage: Test
+    displayName: 'UI and API tests'
+    dependsOn: Quality
+    jobs:
+      - job: UITests
+        displayName: 'UI tests (dev)'
+        container: mcr.microsoft.com/playwright:v1.56.1-jammy
+        steps:
+          - script: npm ci
+            displayName: 'Install dependencies'
+          - script: npm run execute-ui-tests-dev
+            displayName: 'Run UI tests'
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish HTML report'
+            condition: always()
+            inputs:
+              targetPath: 'playwright-report'
+              artifact: 'playwright-report-ui'
+
+      - job: APITests
+        displayName: 'API tests (dev)'
+        container: mcr.microsoft.com/playwright:v1.56.1-jammy
+        steps:
+          - script: npm ci
+            displayName: 'Install dependencies'
+          - script: npm run execute-api-tests-dev
+            displayName: 'Run API tests'
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish HTML report'
+            condition: always()
+            inputs:
+              targetPath: 'playwright-report'
+              artifact: 'playwright-report-api'
