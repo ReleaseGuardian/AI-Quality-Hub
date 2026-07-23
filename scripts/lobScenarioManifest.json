@@ -1,0 +1,5 @@
+{
+  "login.template.feature": "all",
+  "planFeatureVisibility.template.feature": "exchangePlanLobs",
+  "sampleFeature.template.feature": "downloadEligibleLobs"
+}
