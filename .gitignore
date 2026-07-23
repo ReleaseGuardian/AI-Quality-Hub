@@ -1,6 +1,7 @@
 node_modules/
 .features-gen/
 features/ui/generated/
+features/api/generated/
 test-results/
 blob-report/
 playwright/.cache/

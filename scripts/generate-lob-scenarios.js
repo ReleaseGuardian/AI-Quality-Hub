@@ -1,10 +1,11 @@
 // Expands scenario-templates/*.template.feature into real, LOB-scoped .feature files under
-// features/ui/generated/ (gitignored - derived output, not hand-authored, same treatment as
-// .features-gen/). Nested under features/ui/ specifically so bddgen's compiled output lands
-// under .features-gen/ui/generated/ - matching the "ui" Playwright project's testMatch regex
-// (/ui[\\/].../) in playwright.config.ts, same as every other UI scenario. Adding a LOB, or
-// changing which LOBs a feature applies to, is a JSON edit under testdata/ - never a .feature
-// or step-definition change. See:
+// features/<project>/generated/ (gitignored - derived output, not hand-authored, same
+// treatment as .features-gen/). Nested under features/ui/ or features/api/ per the
+// manifest's "project" field specifically so bddgen's compiled output lands under
+// .features-gen/ui/generated/ or .features-gen/api/generated/ - matching the corresponding
+// Playwright project's testMatch regex in playwright.config.ts, same as every other
+// hand-written scenario. Adding a LOB, or changing which LOBs a feature applies to, is a
+// JSON edit under testdata/ - never a .feature or step-definition change. See:
 //   testdata/<environment>/lobCredentials.json  - the full list of LOBs that exist (the one
 //                                                  file that's per-environment - credentials
 //                                                  differ dev vs. qa)
@@ -12,7 +13,8 @@
 //                                                  same business fact regardless of environment)
 //   testdata/lobGroups.json                      - named LOB subsets, explicit or plan-derived
 //                                                  (shared, same reasoning)
-//   scripts/lobScenarioManifest.json             - which template uses which group
+//   scripts/lobScenarioManifest.json             - which template uses which group and project
+//                                                  (e.g. { "group": "all", "project": "api" })
 //
 // Plain Node, no shell-specific syntax - works the same on Windows/macOS/Linux, same style
 // as scripts/open-latest-report.js.
@@ -93,14 +95,25 @@ function renderExamplesBlocks(lobs) {
 }
 
 const templatesDir = path.join(projectRoot, 'scenario-templates');
-const generatedDir = path.join(projectRoot, 'features', 'ui', 'generated');
-fs.rmSync(generatedDir, { recursive: true, force: true });
-fs.mkdirSync(generatedDir, { recursive: true });
+const validProjects = ['ui', 'api'];
+
+for (const project of validProjects) {
+  const dir = path.join(projectRoot, 'features', project, 'generated');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+}
 
 const placeholder = /[ \t]*Examples:\s*\n\s*\|\s*lob\s*\|\s*\n?/;
 let totalScenarios = 0;
 
-for (const [templateFile, groupName] of Object.entries(manifest)) {
+for (const [templateFile, entry] of Object.entries(manifest)) {
+  if (!entry || typeof entry.group !== 'string' || !validProjects.includes(entry.project)) {
+    throw new Error(
+      `Manifest entry for "${templateFile}" must look like { "group": "...", "project": "ui" | "api" }`,
+    );
+  }
+  const { group: groupName, project } = entry;
+
   const templatePath = path.join(templatesDir, templateFile);
   if (!fs.existsSync(templatePath)) {
     throw new Error(`Manifest references "${templateFile}" - not found in scenario-templates/`);
@@ -115,9 +128,10 @@ for (const [templateFile, groupName] of Object.entries(manifest)) {
   const rendered = template.replace(placeholder, renderExamplesBlocks(lobs) + '\n');
 
   const outputName = templateFile.replace(/\.template\.feature$/, '.feature');
+  const generatedDir = path.join(projectRoot, 'features', project, 'generated');
   fs.writeFileSync(path.join(generatedDir, outputName), rendered);
 
-  console.log(`Generated ${outputName}: ${lobs.length} LOB(s) from group "${groupName}" (${lobs.join(', ')})`);
+  console.log(`Generated ${project}/${outputName}: ${lobs.length} LOB(s) from group "${groupName}" (${lobs.join(', ')})`);
   totalScenarios += lobs.length;
 }
 
