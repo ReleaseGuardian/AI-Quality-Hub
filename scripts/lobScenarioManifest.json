@@ -1,6 +1,5 @@
 {
-  "login.template.feature": { "group": "all", "project": "ui" },
-  "planFeatureVisibility.template.feature": { "group": "exchangePlanLobs", "project": "ui" },
-  "sampleFeature.template.feature": { "group": "downloadEligibleLobs", "project": "ui" },
-  "lobApiAccess.template.feature": { "group": "all", "project": "api" }
+  "login.template.feature": "all",
+  "planFeatureVisibility.template.feature": "exchangePlanLobs",
+  "sampleFeature.template.feature": "downloadEligibleLobs"
 }
