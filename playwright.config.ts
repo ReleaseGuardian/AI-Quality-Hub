@@ -138,8 +138,11 @@ const lobProjects: Project[] = Object.entries(lobRoster)
   .filter(([lob, meta]) => isLobSelected(lob, meta.plans))
   .map(([lob, meta]) => ({
     name: lob,
-    // LOB-parameterized scenarios live in features/ui/lob/** -> .features-gen/ui/lob/**.spec.
-    testMatch: /ui[\\/]lob[\\/].*\.spec\.[jt]s$/,
+    // LOB-parameterized scenarios live in features/{ui,api}/lob/** -> .features-gen/{ui,api}/lob/
+    // **.spec. Both UI (browser) and API (browser-less) LOB scenarios run under this one project;
+    // the browser only launches for tests that actually use the `page` fixture, so API LOB
+    // scenarios here never start a browser.
+    testMatch: /(?:ui|api)[\\/]lob[\\/].*\.spec\.[jt]s$/,
     testIgnore: testIgnoreFor(lob),
     use: { ...browserDevices[browserName], ...deviceOrViewport, lob },
     metadata: { plans: meta.plans },
@@ -161,7 +164,10 @@ const apiProject: Project = {
   // baseURL here: each API object (see apis/baseApiClient.ts) owns its own baseUri, so
   // different resources can target different hosts - a project-level baseURL would be a
   // second, easy-to-miss source of truth for the same thing.
+  // Run non-LOB API scenarios (features/api/**) EXCEPT the LOB-parameterized ones under
+  // features/api/lob/** - those run once per LOB via the per-LOB projects above.
   testMatch: /api[\\/].*\.spec\.[jt]s$/,
+  testIgnore: /api[\\/]lob[\\/]/,
 };
 
 // ---- Each run gets its own HTML report folder instead of overwriting the last one ----

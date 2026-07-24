@@ -166,7 +166,9 @@ To point the suite at different values otherwise, either edit `.env`/`.env.dev`/
 features/
   ui/
     lob/                  Per-LOB UI .feature files - each runs once per selected LOB (see Multi-LOB testing)
-  api/                    API .feature files (run under the "api" project, no browser launched)
+  api/
+    lob/                  Per-LOB API .feature files - browser-less, also run once per selected LOB
+    *.feature             Non-LOB API .feature files (run under the "api" project, no browser launched)
 step-definitions/
   *.steps.ts              Step definitions, grouped by feature area, import Given/When/Then
                            from ../utils/fixtures
@@ -279,7 +281,7 @@ credentials are missing.
 | `npm run execute-api-tests-dev` / `npm run execute-api-tests-qa` | Same as `npm run execute-api-tests`, explicitly against `dev` / `qa` |
 | `npm run execute-unit-tests` | UI scenarios tagged `@UnitTest` only |
 | `npm run execute-regression-tests` | UI scenarios tagged `@Regression` only |
-| `npm run execute-lob-tests` | The per-LOB scenarios under `features/ui/lob/**`, one run per selected LOB — see [Multi-LOB testing](#multi-lob-testing) for LOB/Plan/tag selection |
+| `npm run execute-lob-tests` | The per-LOB scenarios under `features/ui/lob/**` **and** `features/api/lob/**`, one run per selected LOB — see [Multi-LOB testing](#multi-lob-testing) for LOB/Plan/tag selection |
 | `npm run execute-lob-tests-dev` / `npm run execute-lob-tests-qa` | Same as `execute-lob-tests`, explicitly against `dev` / `qa` |
 | `npm run bddgen` | Regenerates `.features-gen/` from `.feature` files without running anything |
 | `npm run report` | Opens the most recent Playwright HTML report (each run gets its own timestamped folder) |
@@ -301,6 +303,8 @@ npx playwright test --ui                                       # interactive UI 
 ## Multi-LOB testing
 
 The app serves many **LOBs** (lines of business, e.g. `LAEX`, `NCEX`, `LADS`, `MIDS`), each grouped under one or more **Plans** (`Exchange`, `Medicaid`, `Medicare`, `CHIP`). A scenario is written **once** and run against any LOB(s) — each LOB is its own Playwright project, built dynamically from config, with the LOB code injected via the `lob` test option (like running the same tests across browsers). Nothing about a LOB lives in the Gherkin.
+
+**This works for both UI and API.** A per-LOB scenario lives under `features/ui/lob/**` (browser) or `features/api/lob/**` (browser-less) — both run under the same per-LOB projects, so `--project=LAEX` exercises that LOB's UI *and* API scenarios in one run, and every selector below applies to both layers. (API LOB scenarios never launch a browser, since they don't touch the `page` fixture.)
 
 **Config (all under `testdata/`):**
 
@@ -355,7 +359,7 @@ Most scenarios (login, enrollment) run for **every** LOB. Some features are only
 
 A LOB the feature doesn't apply to simply never runs that feature file (enforced structurally, so it never interferes with `--grep`). Unlisted features are universal to all LOBs. A typo (unknown LOB or Plan) fails loudly at config-load.
 
-**Adding a restricted feature:** put its `.feature` file under `features/ui/lob/`, then add one entry to `featureApplicability.json` scoping it. That's it.
+**Adding a restricted feature:** put its `.feature` file under `features/ui/lob/` (UI) or `features/api/lob/` (API), then add one entry to `featureApplicability.json` scoping it (keyed by the feature file name — the mechanism is identical for both layers). That's it.
 
 ---
 
