@@ -167,8 +167,9 @@ The app serves many **LOBs** (`LAEX`, `NCEX`, `LADS`, `MIDS`, …), each under o
 
 | File (`testdata/`) | Scope | Purpose |
 |---|---|---|
-| `lobs.json` | shared | Roster + Plan membership — `{ "LAEX": { "plans": ["Exchange"] } }` |
-| `featureApplicability.json` | shared | Which restricted features apply to which LOBs (see below) |
+| `lobs.json` | shared | Roster + Plan membership (+ any per-LOB traits) — `{ "LAEX": { "plans": ["Exchange"] } }` |
+| `featureApplicability.json` | shared | Whole-**file** features enabled for only some LOBs (see [Per-LOB differences](#per-lob-differences-3-situations)) |
+| `lobFeatures.json` | shared | **Scenario**-level capabilities enabled for only some LOBs (tag → LOBs) |
 | `<env>/lobCredentials.json` | per-env | Per-LOB credentials |
 
 ### How it works (step by step)
@@ -253,9 +254,34 @@ LOBS=LAEX,MIDS npm run execute-api-tests -- --grep @Sprint42   # the same 5 as A
 
 A scenario can carry many tags, so `@Sprint42` sits alongside `@Regression`/`@TC-1043`. With no shared tag, OR the IDs instead: `--grep "@TC-101|@TC-102|@TC-103"`.
 
-### Feature applicability (features enabled for only some LOBs/Plans)
+### Per-LOB differences (3 situations)
 
-Most scenarios run for every LOB. For ones that don't, add an entry to `testdata/featureApplicability.json`, keyed by the **feature file name**:
+LOBs aren't identical. Pick the tool by *how* they differ — most scenarios still run for every LOB and need none of this:
+
+| The difference is… | Example | Tool |
+|---|---|---|
+| **1. Same feature, different look/data** | login button says "Login" vs "Sign in" | per-LOB **data** (one scenario for all) |
+| **2. Feature present/absent, in its own file** | an HRA feature that has its own `.feature` file | `featureApplicability.json` (**file**-level) |
+| **3. Feature present/absent, in a shared file** | an alerts scenario next to normal scenarios | `lobFeatures.json` + capability tag (**scenario**-level) |
+
+#### 1. Same feature, different appearance or data
+
+The scenario is the same for everyone — only a value changes per LOB. Keep **one scenario**; put the value in per-LOB data and read it via the `lob` fixture. Either make the locator match both labels, or store the label per LOB:
+
+```jsonc
+// lobs.json — add a trait next to plans
+{ "LAEX": { "plans": ["Exchange"], "loginLabel": "Sign in" } }
+```
+```ts
+// step reads it via the injected lob
+const { loginLabel } = new TestDataFactory().getLobs()[lob];
+```
+
+No applicability involved — the scenario runs for all LOBs, the data differs.
+
+#### 2. Feature present/absent — feature has its own file
+
+Add an entry to `testdata/featureApplicability.json`, keyed by the **feature file name**:
 
 ```jsonc
 {
@@ -265,10 +291,34 @@ Most scenarios run for every LOB. For ones that don't, add an entry to `testdata
 }
 ```
 
-- **Plan-based** entries **self-update** — add a LOB to that Plan in `lobs.json` and it's covered automatically.
-- A LOB the feature doesn't apply to simply never runs that file (enforced by file, so it never interferes with `--grep`). Unlisted features are universal. An unknown LOB/Plan fails loudly at config load.
+LOBs not listed simply never collect that file (enforced by file path, so it never touches `--grep`). Plan-based entries self-update as LOBs join the Plan. Unknown LOB/Plan fails loudly at config load.
 
-**Adding a restricted feature:** drop its `.feature` under `features/ui/lob/` or `features/api/lob/`, then add one entry to `featureApplicability.json`. That's it.
+#### 3. Feature present/absent — scenario shares a file with others
+
+When the restricted scenario lives in a **mixed** file (alerts scenario next to universal ones), file-level can't single it out — use a **capability tag**. Tag the scenario, then map the tag to the LOBs that have it:
+
+```gherkin
+# features/ui/lob/dashboard.feature  (mixed file)
+@Regression
+Scenario: Dashboard loads for the current LOB        # runs for every LOB
+  ...
+
+@Regression @Alerts
+Scenario: Alerts panel is visible for the current LOB # only LOBs with @Alerts
+  ...
+```
+```json
+// testdata/lobFeatures.json  — capability tag -> LOBs that have it
+{ "@Alerts": ["LAEX", "NCEX"] }
+```
+
+LOBs without the capability exclude that tag (per-project `grepInvert`), so they still run the file's other scenarios but **never** the tagged one — while the LOBs that have it run everything. Run it like any tag; the LOB scoping is automatic:
+
+```bash
+npm run execute-ui-tests -- --grep @Alerts     # alerts scenario, only on LAEX + NCEX
+```
+
+This composes with your own `--grep` and `LOBS=`/`PLANS=`, and an unknown LOB in `lobFeatures.json` fails loudly at config load.
 
 ---
 
@@ -384,7 +434,7 @@ Reports:
 2. Add/extend a `*.steps.ts` file, importing `Given/When/Then` **from `../utils/fixtures`** (not `playwright-bdd` directly).
 3. New UI flow → add a `pages/*.page.ts` and register it in `pageFactory.ts`. New API resource → add an `apis/*.api.ts` extending `BaseApiClient`, instantiated directly in the step.
 4. New data → a JSON file under `testdata/<environment>/` plus a one-line getter on `TestDataFactory`.
-5. A feature only for some LOBs? Add an entry to `featureApplicability.json` ([above](#feature-applicability-features-enabled-for-only-some-lobsplans)).
+5. A feature only for some LOBs? See [Per-LOB differences](#per-lob-differences-3-situations) — `featureApplicability.json` (own file) or `lobFeatures.json` (shared file).
 6. Run `npm test`, then `npm run typecheck` and `npm run lint` before committing (neither runs automatically).
 
 ---

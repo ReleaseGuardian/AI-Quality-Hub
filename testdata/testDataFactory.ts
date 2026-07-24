@@ -26,4 +26,12 @@ export class TestDataFactory {
     const data = require(TEST_DATA_PATH + this.environment + '/lobCredentials.json');
     return JSON.parse(JSON.stringify(data));
   }
+
+  getLobs() {
+    // The LOB roster + per-LOB traits (plans, and any UI variance like a per-LOB button
+    // label), shared across environments. Read this in a step via the injected `lob` to
+    // handle "same feature, different appearance per LOB" - e.g. getLobs()[lob].loginLabel.
+    const data = require(TEST_DATA_PATH + 'lobs.json');
+    return JSON.parse(JSON.stringify(data));
+  }
 }

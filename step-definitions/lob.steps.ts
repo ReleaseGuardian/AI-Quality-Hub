@@ -48,3 +48,11 @@ Then('I should see the error {string}', async ({ pageFactory }, errorMessage: st
 Then('the HRA feature should be visible', async ({ pageFactory }) => {
   await expect(pageFactory.getLoginPage().logoutLink).toBeVisible();
 });
+
+// Pilot/demo stand-in for the Alerts feature (again the logout link stands in). This scenario
+// lives in a MIXED feature file (features/ui/lob/dashboard.feature); it only runs for LOBs
+// that carry the @Alerts capability in testdata/lobFeatures.json - enforced per project via
+// grepInvert, so the file's other scenarios still run for every LOB.
+Then('the alerts panel should be visible', async ({ pageFactory }) => {
+  await expect(pageFactory.getLoginPage().logoutLink).toBeVisible();
+});

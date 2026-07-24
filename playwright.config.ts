@@ -134,6 +134,26 @@ const testIgnoreFor = (lob: string): RegExp[] =>
     .filter(([, applicableLobs]) => !applicableLobs.includes(lob))
     .map(([featureFile]) => new RegExp(`lob[\\\\/]${escapeRegex(featureFile)}\\.spec`));
 
+// SCENARIO-level applicability (for features that share a file with universal scenarios):
+// testdata/lobFeatures.json maps a capability tag -> the LOBs that have it. A LOB not listed
+// for a tag must not run any scenario carrying it, even when that scenario sits in a mixed
+// feature file. Enforced per project with grepInvert on the excluded tags, so it never removes
+// scenarios that DON'T carry the tag, and other LOBs still run the shared file's other scenarios.
+const lobFeatures: Record<string, string[]> = require('./testdata/lobFeatures.json');
+for (const [tag, lobs] of Object.entries(lobFeatures)) {
+  for (const lob of lobs) {
+    if (!lobRoster[lob]) {
+      throw new Error(`lobFeatures "${tag}" names unknown LOB "${lob}" - not in testdata/lobs.json`);
+    }
+  }
+}
+const grepInvertFor = (lob: string): RegExp | undefined => {
+  const excludedTags = Object.entries(lobFeatures)
+    .filter(([, lobs]) => !lobs.includes(lob))
+    .map(([tag]) => escapeRegex(tag));
+  return excludedTags.length ? new RegExp(excludedTags.join('|')) : undefined;
+};
+
 const lobProjects: Project[] = Object.entries(lobRoster)
   .filter(([lob, meta]) => isLobSelected(lob, meta.plans))
   .map(([lob, meta]) => ({
@@ -144,6 +164,7 @@ const lobProjects: Project[] = Object.entries(lobRoster)
     // scenarios here never start a browser.
     testMatch: /(?:ui|api)[\\/]lob[\\/].*\.spec\.[jt]s$/,
     testIgnore: testIgnoreFor(lob),
+    grepInvert: grepInvertFor(lob),
     use: { ...browserDevices[browserName], ...deviceOrViewport, lob },
     metadata: { plans: meta.plans },
   }));
