@@ -171,6 +171,47 @@ The app serves many **LOBs** (`LAEX`, `NCEX`, `LADS`, `MIDS`, …), each under o
 | `featureApplicability.json` | shared | Which restricted features apply to which LOBs (see below) |
 | `<env>/lobCredentials.json` | per-env | Per-LOB credentials |
 
+### How it works (step by step)
+
+Think of a LOB the way Playwright thinks of a browser: **the same test, run once per LOB.** You never copy a scenario or list LOBs inside it — the framework fans it out. The flow, from the files you edit to the tests that run:
+
+1. **Define each LOB once, as data** — `lobs.json` (roster + Plans) and `<env>/lobCredentials.json` (credentials). This is the single source of truth; adding a LOB means editing these, nothing else.
+2. **Write the scenario once, with no LOB in it** — under `features/ui/lob/` or `features/api/lob/`, referring to "the current LOB" abstractly. No `LAEX`, no `<lob>` placeholder:
+   ```gherkin
+   Scenario: Login succeeds with the LOB's valid credentials
+     Given I am logged in for my LOB
+     Then I should be logged in successfully
+   ```
+3. **The config turns each LOB into a Playwright _project_** — on startup, `playwright.config.ts` reads `lobs.json` and builds one project per LOB (`LAEX`, `NCEX`, …). A "project" is Playwright's native way to run the same tests in different contexts (normally browsers; here, LOBs).
+4. **Your selection decides which projects exist** — `LOBS=` / `PLANS=` are read at this moment, *before any test runs*, and filter that project list. No selection = all LOBs.
+5. **Each project runs the scenario with its own LOB injected** — every LOB project runs the same feature files, handing its LOB code to the steps via the `lob` fixture. So `Given I am logged in for my LOB` looks up *that* LOB's credentials in `lobCredentials.json` and logs in with them.
+6. **Applicability skips features a LOB shouldn't run** — if a feature applies to only some LOBs (`featureApplicability.json`), the other LOBs' projects simply don't pick up that file. Nothing to tag or branch on.
+7. **Tags (`--grep`) filter scenarios, independently of all the above** — LOB selection and tag filtering never collide, so "these LOBs" and "these tagged scenarios" combine freely.
+
+```
+             one scenario  (features/ui/lob/login.feature)
+                              |
+        playwright.config.ts reads lobs.json  +  LOBS= / PLANS=
+                              |
+        +-----------+---------+---------+-----------+
+     [LAEX]      [NCEX]             [LADS]       [MIDS]      one project per selected LOB
+        |           |                  |            |
+   log in with  log in with       log in with  log in with  same steps, each LOB's own creds
+   LAEX creds   NCEX creds        LADS creds   MIDS creds
+```
+
+**Worked example** — with LAEX + NCEX under Exchange and LADS + MIDS under Medicare, running:
+
+```bash
+PLANS=Exchange npm run execute-ui-tests -- --grep @Smoke
+```
+
+- Step 4 → only the **LAEX** and **NCEX** projects are built (the Exchange LOBs).
+- Steps 3 + 5 → each runs the UI `@Smoke` scenario, once with LAEX's credentials and once with NCEX's.
+- Result → one scenario becomes **2 tests**, reported separately as `[LAEX]` and `[NCEX]`.
+
+Add another Exchange LOB to `lobs.json` tomorrow and the same command runs 3 — with no change to the scenario, the steps, or any config code.
+
 ### Selecting what runs — layer × LOBs/Plans × tags
 
 Three independent choices; mix freely:
