@@ -1,0 +1,6 @@
+{
+  "LAEX": { "plans": ["Exchange"] },
+  "NCEX": { "plans": ["Exchange"] },
+  "LADS": { "plans": ["Medicare"] },
+  "MIDS": { "plans": ["Medicare"] }
+}

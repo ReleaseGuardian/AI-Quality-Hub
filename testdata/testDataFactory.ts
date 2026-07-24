@@ -25,4 +25,12 @@ export class TestDataFactory {
     const data = require(TEST_DATA_PATH + this.environment + '/createUserPayloads.json');
     return JSON.parse(JSON.stringify(data));
   }
+
+  getLobCredentials() {
+    // Per-LOB login credentials, keyed by LOB code (e.g. LAEX). Per-environment, since
+    // credentials genuinely differ dev vs qa. require() caches the module - deep-clone
+    // before returning so a mutating test can't leak into others sharing this worker.
+    const data = require(TEST_DATA_PATH + this.environment + '/lobCredentials.json');
+    return JSON.parse(JSON.stringify(data));
+  }
 }

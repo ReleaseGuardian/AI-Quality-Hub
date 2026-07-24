@@ -24,6 +24,13 @@ type TestFixtures = {
    * object per test, deliberately untyped since each scenario stores whatever it needs.
    */
   apiContext: Record<string, unknown>;
+  /**
+   * The current line of business (e.g. "LAEX"). Supplied per Playwright project: each LOB is
+   * its own project (built in playwright.config.ts from testdata/lobs.json) that sets
+   * `use: { lob }`, so a scenario under features/ui/lob/** runs once per LOB with the right
+   * value injected here. Empty for the non-LOB `ui`/`api` projects.
+   */
+  lob: string;
 };
 
 type WorkerFixtures = {
@@ -32,6 +39,10 @@ type WorkerFixtures = {
 };
 
 export const test = base.extend<TestFixtures, WorkerFixtures>({
+  // Set per project via `use: { lob: 'LAEX' }`; the default empty value applies to the
+  // non-LOB ui/api projects, which don't run LOB-parameterized scenarios.
+  lob: ['', { option: true }],
+
   pageFactory: async ({ page }, use) => {
     await use(new PageFactory(page));
   },

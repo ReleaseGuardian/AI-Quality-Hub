@@ -18,6 +18,7 @@ It covers both **UI testing** (Page Object Model, driven by a `PageFactory`) and
   - [Page objects and API objects](#page-objects-and-api-objects)
   - [Test data factory](#test-data-factory)
 - [Running tests](#running-tests)
+- [Multi-LOB testing](#multi-lob-testing)
 - [Browser selection](#browser-selection)
 - [Parallelization and retries](#parallelization-and-retries)
 - [Tags](#tags)
@@ -274,6 +275,8 @@ throws a clear error if a `.feature` file references a key that doesn't exist.
 | `npm run execute-api-tests-dev` / `npm run execute-api-tests-qa` | Same as `npm run execute-api-tests`, explicitly against `dev` / `qa` |
 | `npm run execute-unit-tests` | UI scenarios tagged `@UnitTest` only |
 | `npm run execute-regression-tests` | UI scenarios tagged `@Regression` only |
+| `npm run execute-lob-tests` | The per-LOB scenarios under `features/ui/lob/**`, one run per selected LOB — see [Multi-LOB testing](#multi-lob-testing) for LOB/Plan/tag selection |
+| `npm run execute-lob-tests-dev` / `npm run execute-lob-tests-qa` | Same as `execute-lob-tests`, explicitly against `dev` / `qa` |
 | `npm run bddgen` | Regenerates `.features-gen/` from `.feature` files without running anything |
 | `npm run report` | Opens the most recent Playwright HTML report (each run gets its own timestamped folder) |
 | `npm run typecheck` | `tsc --noEmit` — type-checks the whole project, no build output |
@@ -288,6 +291,67 @@ npx playwright test --project=ui --headed        # visible browser window
 npx playwright test --project=ui --debug         # step-through debugger
 npx playwright test --ui                         # interactive UI mode
 ```
+
+---
+
+## Multi-LOB testing
+
+The app serves many **LOBs** (lines of business, e.g. `LAEX`, `NCEX`, `LADS`, `MIDS`), each grouped under one or more **Plans** (`Exchange`, `Medicaid`, `Medicare`, `CHIP`). A scenario is written **once** and run against any LOB(s) — each LOB is its own Playwright project, built dynamically from config, with the LOB code injected via the `lob` test option (like running the same tests across browsers). Nothing about a LOB lives in the Gherkin.
+
+**Config (all under `testdata/`):**
+
+| File | Scope | Purpose |
+|---|---|---|
+| `lobs.json` | shared | The roster: which LOBs exist and each one's Plan membership (`{ "LAEX": { "plans": ["Exchange"] } }`) |
+| `featureApplicability.json` | shared | Which restricted features apply to which LOBs (see below) |
+| `<env>/lobCredentials.json` | per-env | Per-LOB login credentials (`dev` vs `qa` differ) |
+
+**Adding a new LOB is config-only** — one line in `lobs.json` plus its credentials in each `<env>/lobCredentials.json`. No scenario, step, or config-code edits.
+
+### Selecting what runs — one command, four axes
+
+`npm run execute-lob-tests` is the single entry point. Selection uses two composable mechanisms:
+
+- **Env vars before the command** — decide *which LOB projects exist* (read at config-load, before Playwright starts):
+  - `LOBS=LAEX,MIDS` — only these LOBs
+  - `PLANS=Exchange,Medicare` — every LOB under these Plans
+- **Playwright flags after `-- `** — filter *within* the selected projects:
+  - `--project=LAEX` — a specific LOB (native, exact name)
+  - `--grep @Regression` — by tag (test type / test-case ID / any custom tag — see [Tags](#tags))
+
+Omit an axis and it's unconstrained (no `LOBS`/`PLANS` = all LOBs; no `--grep` = all tags).
+
+| Goal | Command |
+|---|---|
+| All LOBs | `npm run execute-lob-tests` |
+| One Plan | `PLANS=Exchange npm run execute-lob-tests` |
+| Several Plans | `PLANS=Exchange,Medicare npm run execute-lob-tests` |
+| One LOB | `npm run execute-lob-tests -- --project=LAEX` |
+| Several LOBs | `LOBS=LAEX,MIDS npm run execute-lob-tests` |
+| Plan ∩ LOB subset | `PLANS=Exchange LOBS=LAEX npm run execute-lob-tests` |
+| Everything at once | `PLANS=Medicare LOBS=LADS,MIDS npm run execute-lob-tests -- --grep @Regression` |
+
+Use `execute-lob-tests-dev` / `-qa` to pin the environment; pass `LOBS=`/`PLANS=`/`--grep` the same way.
+
+### Feature applicability (some features are only for a few LOBs or Plans)
+
+Most scenarios (login, enrollment) run for **every** LOB. Some features are only enabled for a subset — `hra.feature` in this repo is just an example; you'll have others. Declare each restricted feature in `testdata/featureApplicability.json`, keyed by its **feature file name**. The value can be:
+
+```jsonc
+{
+  "hra.feature":     ["LAEX", "LADS", "MIDS"],          // explicit list of LOBs
+  "planDoc.feature": { "plans": ["Exchange"] },          // every LOB under Exchange (self-updating)
+  "mixed.feature":   { "plans": ["Medicare"], "lobs": ["LAEX"] }  // union of a Plan + extra LOBs
+}
+```
+
+- **Explicit LOBs** — a hand-picked list.
+- **Plan-based** (`{ "plans": [...] }`) — resolves to every LOB in those Plans and **self-updates**: add a new LOB to that Plan in `lobs.json` and it's automatically covered, with no edit here.
+- **Union** — combine `plans` and `lobs`.
+
+A LOB the feature doesn't apply to simply never runs that feature file (enforced structurally, so it never interferes with `--grep`). Unlisted features are universal to all LOBs. A typo (unknown LOB or Plan) fails loudly at config-load.
+
+**Adding a restricted feature:** put its `.feature` file under `features/ui/lob/`, then add one entry to `featureApplicability.json` scoping it. That's it.
 
 ---
 
@@ -330,6 +394,28 @@ Filter by tag with `--grep`/`--grep-invert`, either via the `npm run execute-uni
 ```bash
 npx playwright test --grep @UnitTest
 npx playwright test --grep-invert @Regression
+```
+
+### Combining multiple tags
+
+`--grep` takes a **regex**, so you can combine tags with boolean logic. Quote the expression so the shell doesn't interpret `|`, `(`, `)`, or `*`.
+
+| Logic | Syntax | Matches |
+|---|---|---|
+| **OR** (any of) | `--grep "@Smoke\|@Regression"` | has `@Smoke` **or** `@Regression` |
+| **AND** (all of) | `--grep "(?=.*@Smoke)(?=.*@Regression)"` | has `@Smoke` **and** `@Regression` |
+| **EXCLUDE** | `--grep @Regression --grep-invert @WIP` | `@Regression` but **not** `@WIP` |
+
+OR is the common case. If you frequently need AND-of-tags, a single combined tag (e.g. `@SmokeRegression`) usually reads better than the lookahead form.
+
+Tag filters work with **any** tag — test type (`@Smoke`, `@Regression`), test-case IDs (`@TC-1234`), or your own custom tags — and **compose with LOB/Plan selection**, since [Multi-LOB testing](#multi-lob-testing) never uses `--grep` for its own routing:
+
+```bash
+# Regression, excluding WIP, for the Exchange plan's LOBs, in qa
+PLANS=Exchange npm run execute-lob-tests-qa -- --grep @Regression --grep-invert @WIP
+
+# A specific test-case ID across a couple of LOBs
+LOBS=LAEX,MIDS npm run execute-lob-tests -- --grep @TC-1234
 ```
 
 ---

@@ -71,11 +71,88 @@ if (!(browserName in browserDevices)) {
   throw new Error(`Unknown BROWSER_NAME "${browserName}" - expected one of: ${Object.keys(browserDevices).join(', ')}`);
 }
 
+// ---- Multi-LOB projects: one Playwright project per line of business ----
+// Each LOB is projected like a browser: the same feature files under features/ui/lob/** run
+// once per LOB, with the LOB code injected via `use: { lob }` (see utils/fixtures.ts). The
+// roster + plan membership come from testdata/lobs.json; which restricted features apply to
+// which LOBs comes from testdata/featureApplicability.json. Adding a LOB is a config-only
+// change - no scenario/step/config-code edits.
+const lobRoster: Record<string, { plans: string[] }> = require('./testdata/lobs.json');
+
+// A restricted feature's applicability can be declared as EITHER an explicit array of LOB
+// codes, OR an object scoping by plan and/or explicit lobs (their union). Plan-based scoping
+// self-updates: a feature applicable to "Exchange" automatically covers new Exchange LOBs as
+// they're added to lobs.json - no edit to featureApplicability.json needed.
+//   "hra.feature": ["LAEX", "LADS", "MIDS"]                  // explicit LOBs
+//   "planDoc.feature": { "plans": ["Exchange"] }             // every LOB under Exchange
+//   "mixed.feature": { "plans": ["Medicare"], "lobs": ["LAEX"] }  // union of both
+type ApplicabilitySpec = string[] | { plans?: string[]; lobs?: string[] };
+const applicability: Record<string, ApplicabilitySpec> = require('./testdata/featureApplicability.json');
+
+const rosterLobs = Object.keys(lobRoster);
+const rosterPlans = new Set(Object.values(lobRoster).flatMap((m) => m.plans));
+
+// Resolve a spec to the concrete list of LOBs it applies to, validating references (fail loud
+// at load time on a typo'd LOB or plan).
+function resolveApplicableLobs(featureFile: string, spec: ApplicabilitySpec): string[] {
+  const explicitLobs = Array.isArray(spec) ? spec : spec.lobs ?? [];
+  for (const lob of explicitLobs) {
+    if (!lobRoster[lob]) {
+      throw new Error(`featureApplicability "${featureFile}" names unknown LOB "${lob}" - not in testdata/lobs.json`);
+    }
+  }
+  const plans = Array.isArray(spec) ? [] : spec.plans ?? [];
+  for (const plan of plans) {
+    if (!rosterPlans.has(plan)) {
+      throw new Error(`featureApplicability "${featureFile}" names unknown plan "${plan}" - no LOB in testdata/lobs.json belongs to it`);
+    }
+  }
+  const fromPlans = rosterLobs.filter((lob) => lobRoster[lob].plans.some((p) => plans.includes(p)));
+  return [...new Set([...explicitLobs, ...fromPlans])];
+}
+
+// Precompute each restricted feature's applicable LOB set once.
+const applicableLobsByFeature: Record<string, string[]> = Object.fromEntries(
+  Object.entries(applicability).map(([featureFile, spec]) => [featureFile, resolveApplicableLobs(featureFile, spec)]),
+);
+
+// Runtime selection (both optional, comma-separated): LOBS=LAEX,MIDS and/or PLANS=Exchange.
+const parseCsvEnv = (name: string) =>
+  (process.env[name] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+const selectedLobs = parseCsvEnv('LOBS');
+const selectedPlans = parseCsvEnv('PLANS');
+const isLobSelected = (lob: string, plans: string[]) =>
+  (selectedLobs.length === 0 || selectedLobs.includes(lob)) &&
+  (selectedPlans.length === 0 || plans.some((p) => selectedPlans.includes(p)));
+
+// Applicability is enforced by FILE, not a tag: a LOB project ignores the generated spec of
+// any restricted feature it isn't listed for. Structural + deterministic, so it never competes
+// with the user's --grep (which overrides config-level grep).
+const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const testIgnoreFor = (lob: string): RegExp[] =>
+  Object.entries(applicableLobsByFeature)
+    .filter(([, applicableLobs]) => !applicableLobs.includes(lob))
+    .map(([featureFile]) => new RegExp(`lob[\\\\/]${escapeRegex(featureFile)}\\.spec`));
+
+const lobProjects: Project[] = Object.entries(lobRoster)
+  .filter(([lob, meta]) => isLobSelected(lob, meta.plans))
+  .map(([lob, meta]) => ({
+    name: lob,
+    // LOB-parameterized scenarios live in features/ui/lob/** -> .features-gen/ui/lob/**.spec.
+    testMatch: /ui[\\/]lob[\\/].*\.spec\.[jt]s$/,
+    testIgnore: testIgnoreFor(lob),
+    use: { ...browserDevices[browserName], ...deviceOrViewport, lob },
+    metadata: { plans: meta.plans },
+  }));
+
 const uiProject: Project = {
   name: 'ui',
   use: { ...browserDevices[browserName], ...deviceOrViewport },
-  // Only run UI scenarios (features/ui/**) under this project.
+  // Only run UI scenarios (features/ui/**) under this project, EXCEPT the LOB-parameterized
+  // ones under features/ui/lob/** - those run once per LOB via the per-LOB projects above, so
+  // excluding them here keeps each non-LOB scenario running exactly once.
   testMatch: /ui[\\/].*\.spec\.[jt]s$/,
+  testIgnore: /ui[\\/]lob[\\/]/,
 };
 
 const apiProject: Project = {
@@ -113,5 +190,5 @@ export default defineConfig({
     trace: traceMode,
     actionTimeout: 15_000,
   },
-  projects: [uiProject, apiProject],
+  projects: [uiProject, apiProject, ...lobProjects],
 });
