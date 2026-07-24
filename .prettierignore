@@ -1,0 +1,8 @@
+node_modules
+.claude
+.features-gen
+playwright-report
+test-results
+blob-report
+logs
+package-lock.json

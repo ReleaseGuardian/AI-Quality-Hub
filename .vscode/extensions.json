@@ -1,0 +1,9 @@
+{
+  // VS Code offers to install these when the project is opened.
+  "recommendations": [
+    "esbenp.prettier-vscode", // Prettier - the formatter used on save
+    "dbaeumer.vscode-eslint", // ESLint (flat config)
+    "ms-playwright.playwright", // Playwright Test: run/debug tests, trace viewer
+    "alexkrechik.cucumberautocomplete" // Gherkin syntax + step-definition navigation
+  ]
+}

@@ -21,7 +21,9 @@
     "execute-regression-tests": "npm run bddgen && playwright test .features-gen/ui/lob .features-gen/api/lob --grep @Regression",
     "report": "node scripts/open-latest-report.js",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@playwright/test": "^1.56.1",
@@ -37,6 +39,8 @@
     "@types/node": "^24.0.0",
     "cross-env": "^10.1.0",
     "eslint": "^9.39.4",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.9.6",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.62.1"
   },

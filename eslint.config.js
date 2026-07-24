@@ -1,5 +1,8 @@
 const js = require('@eslint/js');
 const tseslint = require('typescript-eslint');
+// Turns off ESLint rules that would conflict with Prettier - Prettier owns formatting,
+// ESLint owns correctness. Must be last so it overrides earlier configs.
+const prettierConfig = require('eslint-config-prettier');
 
 module.exports = tseslint.config(
   js.configs.recommended,
@@ -60,4 +63,5 @@ module.exports = tseslint.config(
       ],
     },
   },
+  prettierConfig,
 );
