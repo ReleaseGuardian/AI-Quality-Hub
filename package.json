@@ -7,7 +7,7 @@
   "scripts": {
     "bddgen": "bddgen",
     "pretest": "npm run bddgen",
-    "test": "playwright test --project=ui",
+    "test": "playwright test .features-gen/ui/lob",
     "execute-ui-tests-dev": "cross-env TEST_ENVIRONMENT=dev npm test",
     "execute-ui-tests-qa": "cross-env TEST_ENVIRONMENT=qa npm test",
     "execute-lob-tests": "npm run bddgen && playwright test .features-gen/ui/lob",
@@ -16,8 +16,8 @@
     "execute-api-tests": "npm run bddgen && playwright test --project=api",
     "execute-api-tests-dev": "cross-env TEST_ENVIRONMENT=dev npm run execute-api-tests",
     "execute-api-tests-qa": "cross-env TEST_ENVIRONMENT=qa npm run execute-api-tests",
-    "execute-unit-tests": "npm run bddgen && playwright test --project=ui --grep @UnitTest",
-    "execute-regression-tests": "npm run bddgen && playwright test --project=ui --grep @Regression",
+    "execute-unit-tests": "npm run bddgen && playwright test .features-gen/ui/lob --grep @UnitTest",
+    "execute-regression-tests": "npm run bddgen && playwright test .features-gen/ui/lob --grep @Regression",
     "report": "node scripts/open-latest-report.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

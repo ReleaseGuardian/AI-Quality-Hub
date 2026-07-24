@@ -164,7 +164,8 @@ To point the suite at different values otherwise, either edit `.env`/`.env.dev`/
 
 ```
 features/
-  ui/                     UI .feature files (run under the "ui" project - browser chosen via BROWSER_NAME)
+  ui/
+    lob/                  Per-LOB UI .feature files - each runs once per selected LOB (see Multi-LOB testing)
   api/                    API .feature files (run under the "api" project, no browser launched)
 step-definitions/
   *.steps.ts              Step definitions, grouped by feature area, import Given/When/Then
@@ -178,8 +179,10 @@ apis/
                            APIRequestContext
   users.api.ts              One class per resource, extends BaseApiClient, builds its own URLs
 testdata/
-  dev/users.json            Environment-scoped JSON test data (login credentials)
-  qa/users.json             Same shape, for TEST_ENVIRONMENT=qa
+  lobs.json                 LOB roster + Plan membership (shared across environments)
+  featureApplicability.json Which restricted features apply to which LOBs/Plans (shared)
+  dev/lobCredentials.json   Per-LOB login credentials (valid/invalid sets), for TEST_ENVIRONMENT=dev
+  qa/lobCredentials.json    Same shape, for TEST_ENVIRONMENT=qa
   dev/createUserPayloads.json  API createUser() request bodies, keyed by case
   qa/createUserPayloads.json   Same shape, for TEST_ENVIRONMENT=qa
   testDataFactory.ts        Instance-based factory; one plain getXxxData() method per JSON file
@@ -191,8 +194,9 @@ utils/
                            attachment) - every *.steps.ts file imports Given/When/Then from here
   logger.ts                 log4js wrapper, one log file per worker process
   baseUtil.ts                Log directory cleanup, used from global-setup.ts
-playwright.config.ts       Projects ("ui", "api"), reporters, screenshot/video/trace config, bddgen
-                           config, env-driven browser/retries/workers, with validated numeric env vars
+playwright.config.ts       Projects ("api" + one per LOB, built from testdata/lobs.json), reporters,
+                           screenshot/video/trace config, bddgen config, env-driven browser/retries/
+                           workers, with validated numeric env vars
 global-setup.ts            Runs once before all workers: clears old logs (.env is already loaded by
                            the time this runs, via playwright.config.ts)
 tsconfig.json               TypeScript compiler options (strict, no emit - Playwright runs .ts directly)
@@ -211,12 +215,12 @@ Enforced automatically by `npm run lint` (`@typescript-eslint/naming-convention`
 | What | Convention | Example |
 |---|---|---|
 | Classes, interfaces, type aliases, enums | `PascalCase` | `PageFactory`, `BaseApiClient`, `TestFixtures` |
-| Variables, functions, methods, parameters | `camelCase` | `getLoginData()`, `dataFactory`, `screenshotMode` |
+| Variables, functions, methods, parameters | `camelCase` | `getLobCredentials()`, `dataFactory`, `screenshotMode` |
 | Class fields, incl. `private` ones | `camelCase`, no leading underscore | `private loginPage?: LoginPage` (not `_loginPage`) — the `private` keyword is already the privacy signal |
 | Module-level fixed-literal constants | `SCREAMING_SNAKE_CASE` | `TEST_DATA_PATH` in `testDataFactory.ts` |
 | Any other `const`, even derived/computed ones | `camelCase` | `browserName`, `reportTimestamp` — stays camelCase even though it's a `const`, because the value isn't a hardcoded literal |
 | Env vars (`.env`/`.env.dev`/`.env.qa`) | `SCREAMING_SNAKE_CASE` | `BROWSER_NAME`, `TEST_ENVIRONMENT` |
-| Files | `camelCase.ts`, domain-suffixed where applicable | `pageFactory.ts`, `login.page.ts`, `users.api.ts`, `login.steps.ts` |
+| Files | `camelCase.ts`, domain-suffixed where applicable | `pageFactory.ts`, `login.page.ts`, `users.api.ts`, `lob.steps.ts` |
 | Folders | `kebab-case` (a single word is trivially kebab-case) | `step-definitions/`, `apis/`, `pages/` |
 | Object/type literal property names | Not enforced | `Authorization` header, JSON API field names — these often have to match an external contract, not our own convention |
 | `Given`/`When`/`Then`/`Before`/`After`/`BeforeAll`/`AfterAll` | `PascalCase` (explicit exception) | Destructured from `createBdd()` in `utils/fixtures.ts` — intentionally mirrors Gherkin keywords rather than following the general camelCase rule |
@@ -239,7 +243,7 @@ Pages are provided via a Playwright fixture; API objects are constructed directl
     await pageFactory.getLoginPage().goto();
   });
   ```
-  (see `step-definitions/login.steps.ts`). Because it's test-scoped, **the same `PageFactory` instance is shared across every step in one scenario** — `pages/pageFactory.ts` lazily constructs and caches each page on first access (`this.loginPage ??= new LoginPage(this.page)`), so a page used by 3 different steps in the same scenario is only ever built once. Add a new page by adding a private field + a `getXPage()` getter to `PageFactory` — no changes needed anywhere `pageFactory` is already used.
+  (see `step-definitions/lob.steps.ts`). Because it's test-scoped, **the same `PageFactory` instance is shared across every step in one scenario** — `pages/pageFactory.ts` lazily constructs and caches each page on first access (`this.loginPage ??= new LoginPage(this.page)`), so a page used by 3 different steps in the same scenario is only ever built once. Add a new page by adding a private field + a `getXPage()` getter to `PageFactory` — no changes needed anywhere `pageFactory` is already used.
 
 - **APIs** (`apis/*.api.ts`) — extend `apis/baseApiClient.ts`'s `BaseApiClient`. Its constructor reads the single `API_BASE_URL` env var directly — a missing value throws a clear error immediately rather than silently sending requests to `undefined`. Each resource method then builds its own URL (`this.baseUri + 'path'`) and calls `this.request.get/post(...)` directly — URL-building lives at the service layer, not in a shared base helper. No factory, and not a fixture: step definitions just do
   ```ts
@@ -252,14 +256,14 @@ Both give every scenario a fresh, isolated instance — no shared mutable state 
 
 ### Test data factory
 
-Test data (e.g. login credentials) lives in JSON under `testdata/<environment>/` (`testdata/dev/users.json`), keyed by a short name per case (`valid`, `invalidUsername`, `invalidPassword`, ...). The environment folder is selected by the `TEST_ENVIRONMENT` env var (defaults to `dev`), so pointing the suite at a different environment's data is a one-line env change, not a code change.
+Per-environment test data (e.g. login credentials) lives in JSON under `testdata/<environment>/` (`testdata/dev/lobCredentials.json`), keyed by LOB then by case (`valid`, `invalidUsername`, `invalidPassword`). The environment folder is selected by the `TEST_ENVIRONMENT` env var (defaults to `dev`), so pointing the suite at a different environment's data is a one-line env change, not a code change. (LOB roster/Plan/applicability data — `lobs.json`, `featureApplicability.json` — is shared across environments and lives at the `testdata/` root; see [Multi-LOB testing](#multi-lob-testing).)
 
-`testdata/testDataFactory.ts` is instance-based (`new TestDataFactory()`), reads its environment from `process.env.TEST_ENVIRONMENT` in the constructor, and has one plainly-named method per JSON file that loads it via `require(...)` and returns the whole parsed file — e.g. `getLoginData()` returns all of `users.json`. Callers index into it by key themselves, e.g. `new TestDataFactory().getLoginData()['valid']` (see `step-definitions/login.steps.ts`). Deliberately untyped (no per-domain interfaces) to keep adding a new JSON file cheap — add a new data domain by adding the file under `testdata/<environment>/` plus a one-line `getXxxData()` method. Same pattern for API request bodies — `getCreateUserPayloads()['valid']` reads `createUserPayloads.json` for `UsersApi.createUser()` (see `step-definitions/api.steps.ts`), instead of hardcoding the payload inline in the step.
+`testdata/testDataFactory.ts` is instance-based (`new TestDataFactory()`), reads its environment from `process.env.TEST_ENVIRONMENT` in the constructor, and has one plainly-named method per JSON file that loads it via `require(...)` and returns the whole parsed file — e.g. `getLobCredentials()` returns all of `lobCredentials.json`. Callers index into it themselves, e.g. `new TestDataFactory().getLobCredentials()['LAEX'].valid` (see `step-definitions/lob.steps.ts`). Deliberately untyped (no per-domain interfaces) to keep adding a new JSON file cheap — add a new data domain by adding the file under `testdata/<environment>/` plus a one-line `getXxxData()` method. Same pattern for API request bodies — `getCreateUserPayloads()['valid']` reads `createUserPayloads.json` for `UsersApi.createUser()` (see `step-definitions/api.steps.ts`), instead of hardcoding the payload inline in the step.
 
-Scaling to many test cases (e.g. 30+ login credential sets for different scenarios) needs **no
-code change at all** — it's purely adding more keys to the JSON file, referenced by name from
-`.feature` files (`When I log in as the "mfaEnabledUser" test user`). `login.steps.ts` already
-throws a clear error if a `.feature` file references a key that doesn't exist.
+Scaling to many LOBs needs **no code change at all** — it's purely adding entries to the JSON
+files (a LOB to `lobs.json` + its credentials to each `lobCredentials.json`), never touching a
+`.feature` file. `lob.steps.ts` throws a clear error if a scenario runs for a LOB whose
+credentials are missing.
 
 ---
 
@@ -269,7 +273,7 @@ throws a clear error if a `.feature` file references a key that doesn't exist.
 
 | Command | What it runs |
 |---|---|
-| `npm test` | All UI scenarios, browser from `BROWSER_NAME` (default `chromium`), against whichever environment `TEST_ENVIRONMENT` already resolves to (`dev` if unset) |
+| `npm test` | All per-LOB UI scenarios (each runs once per LOB — see [Multi-LOB testing](#multi-lob-testing)), browser from `BROWSER_NAME` (default `chromium`), against whichever environment `TEST_ENVIRONMENT` already resolves to (`dev` if unset) |
 | `npm run execute-ui-tests-dev` / `npm run execute-ui-tests-qa` | Same as `npm test`, explicitly against `dev` / `qa` (sets `TEST_ENVIRONMENT` for you via `cross-env`, so it works the same on every shell/OS) |
 | `npm run execute-api-tests` | API scenarios only (no browser launched) |
 | `npm run execute-api-tests-dev` / `npm run execute-api-tests-qa` | Same as `npm run execute-api-tests`, explicitly against `dev` / `qa` |
@@ -285,11 +289,11 @@ throws a clear error if a `.feature` file references a key that doesn't exist.
 You can also drop straight to the Playwright CLI for anything not covered by a script, e.g.:
 
 ```bash
-npx playwright test --project=ui --grep "invalid username"
-npx playwright test --project=api --project=ui   # both projects in one run
-npx playwright test --project=ui --headed        # visible browser window
-npx playwright test --project=ui --debug         # step-through debugger
-npx playwright test --ui                         # interactive UI mode
+npx playwright test --project=LAEX --grep "invalid username"   # one LOB
+npx playwright test --project=LAEX --project=api               # a LOB + the API project
+npx playwright test --project=LAEX --headed                    # visible browser window
+npx playwright test --project=LAEX --debug                     # step-through debugger
+npx playwright test --ui                                       # interactive UI mode
 ```
 
 ---
@@ -359,11 +363,11 @@ A LOB the feature doesn't apply to simply never runs that feature file (enforced
 
 The `ui` project's browser engine and headed/headless mode are both decided by env vars in `.env`, not by CLI flags or hardcoded config:
 
-- `BROWSER_NAME` — `chromium` (default) | `firefox` | `webkit`. Read once in `playwright.config.ts` to pick the Playwright `devices[...]` preset for the single `ui` project. An unrecognized value throws a clear error at config-load time rather than silently falling back.
-- `HEADLESS` — defaults to headless (`true`); set `HEADLESS=false` to watch the browser run. `npx playwright test --project=ui --headed` still works as a CLI override (`--headed` beats `.env` regardless of `HEADLESS`).
+- `BROWSER_NAME` — `chromium` (default) | `firefox` | `webkit`. Read once in `playwright.config.ts` to pick the Playwright `devices[...]` preset applied to every browser-based (per-LOB) project. An unrecognized value throws a clear error at config-load time rather than silently falling back.
+- `HEADLESS` — defaults to headless (`true`); set `HEADLESS=false` to watch the browser run. `npx playwright test --project=LAEX --headed` still works as a CLI override (`--headed` beats `.env` regardless of `HEADLESS`).
 - `DEVICE` / `VIEWPORT_WIDTH` / `VIEWPORT_HEIGHT` — optional emulation on top of whichever browser `BROWSER_NAME` selected.
 
-To run against a different browser, edit `BROWSER_NAME` in `.env` (or override it inline per the shell table above) — there's no `--project=firefox` flag anymore, since there's only one `ui` project.
+To run against a different browser, edit `BROWSER_NAME` in `.env` (or override it inline per the shell table above) — it applies to every per-LOB project, so there's no separate `--project=firefox` (the projects are the LOBs, not the browsers).
 
 ---
 
@@ -387,7 +391,7 @@ Example (multiple variables at once):
 
 ## Tags
 
-Gherkin tags on a `Scenario` (e.g. `@UnitTest`, `@Regression`, `@API`) are picked up automatically by `playwright-bdd` and become native Playwright test tags — no extra config needed. A scenario can carry more than one tag (e.g. `login.feature`'s "Successful login" scenario is both `@UnitTest` and `@Regression`).
+Gherkin tags on a `Scenario` (e.g. `@Smoke`, `@Regression`, `@API`) are picked up automatically by `playwright-bdd` and become native Playwright test tags — no extra config needed. A scenario can carry more than one tag (e.g. `lob/login.feature`'s "Login succeeds" scenario is both `@Smoke` and `@Regression`).
 
 Filter by tag with `--grep`/`--grep-invert`, either via the `npm run execute-unit-tests` / `execute-regression-tests` scripts above, or directly:
 
@@ -430,8 +434,8 @@ Every worker process writes its own log file to `logs/thread_<pid>.log` (gitigno
 Example failure entry:
 
 ```
-[2026-07-02T09:57:26.030] [ERROR] default - Scenario FAILED: Login fails with an invalid password
-Error: No test user "invalidPasswordXXX" found in testdata/dev/users.json
+[2026-07-02T09:57:26.030] [ERROR] default - Scenario FAILED: Login is rejected with an invalid password
+Error: No "invalidPassword" credentials for LOB "LAEX" in testdata/dev/lobCredentials.json
 ```
 
 Set `LOG_LEVEL` in `.env` to control verbosity (see the [environment configuration table](#environment-configuration)). Need a logger inside a step or page/API object? Take the worker-scoped `logger` fixture the same way `fixtures.ts` does — destructure it from the fixtures object (`async ({ logger }) => { logger.info(...) }`).
@@ -466,7 +470,8 @@ Set `LOG_LEVEL` in `.env` to control verbosity (see the [environment configurati
 - **`Unknown BROWSER_NAME "..."` error on startup** — `BROWSER_NAME` in `.env` must be exactly `chromium`, `firefox`, or `webkit`.
 - **`API_BASE_URL is not set` error** — add `API_BASE_URL` to `.env` (see [Environment configuration](#environment-configuration)).
 - **Invalid `RETRIES`/`WORKERS`/`SLOWMO`/`VIEWPORT_WIDTH`/`VIEWPORT_HEIGHT`** — these must be plain numbers; a non-numeric value throws a clear error at config-load time (same as `BROWSER_NAME`) instead of silently misbehaving.
-- **`No test user "..." found in testdata/<env>/users.json`** — the key used in a `.feature` file's `When I log in as the "..." test user` step doesn't exist in `testdata/<TEST_ENVIRONMENT>/users.json`. Check the JSON file's keys and `TEST_ENVIRONMENT` match.
+- **`No "..." credentials for LOB "..." in testdata/<env>/lobCredentials.json`** — a LOB is in the roster (`lobs.json`) but is missing that credential set in `testdata/<TEST_ENVIRONMENT>/lobCredentials.json`. Check the JSON file's keys and `TEST_ENVIRONMENT` match.
+- **`featureApplicability "..." names unknown LOB/plan "..."`** — an entry in `testdata/featureApplicability.json` references a LOB or Plan that no LOB in `lobs.json` has. Fix the typo or add the LOB/Plan to the roster.
 - **A UI test times out waiting on a locator** — check whether the target site (`LOGIN_APP_URL`, a public demo site) is rate-limiting repeated runs; re-run after a short wait.
 - **`tsc --noEmit` errors after pulling changes** — run `npm install` again; a dependency or type declaration may have changed.
 - **`eslint` errors after pulling changes** — run `npm install` again; `eslint.config.js`'s rules or dependencies may have changed.
