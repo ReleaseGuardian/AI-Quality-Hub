@@ -6,6 +6,5 @@ playwright/.cache/
 logs/
 *.log
 .env.local
-.claude/settings.local.json
 .DS_Store
 DEMO.md
