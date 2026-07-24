@@ -148,27 +148,13 @@ const lobProjects: Project[] = Object.entries(lobRoster)
     metadata: { plans: meta.plans },
   }));
 
-const uiProject: Project = {
-  name: 'ui',
-  use: { ...browserDevices[browserName], ...deviceOrViewport },
-  // Only run UI scenarios (features/ui/**) under this project, EXCEPT the LOB-parameterized
-  // ones under features/ui/lob/** - those run once per LOB via the per-LOB projects above, so
-  // excluding them here keeps each non-LOB scenario running exactly once.
-  testMatch: /ui[\\/].*\.spec\.[jt]s$/,
-  testIgnore: /ui[\\/]lob[\\/]/,
-};
-
-const apiProject: Project = {
-  name: 'api',
-  // API scenarios don't need a browser - the built-in `request` fixture is enough. No
-  // baseURL here: each API object (see apis/baseApiClient.ts) owns its own baseUri, so
-  // different resources can target different hosts - a project-level baseURL would be a
-  // second, easy-to-miss source of truth for the same thing.
-  // Run non-LOB API scenarios (features/api/**) EXCEPT the LOB-parameterized ones under
-  // features/api/lob/** - those run once per LOB via the per-LOB projects above.
-  testMatch: /api[\\/].*\.spec\.[jt]s$/,
-  testIgnore: /api[\\/]lob[\\/]/,
-};
+// Every scenario is LOB-scoped: the whole app is defined by Plans and LOBs, so there are no
+// non-LOB projects. UI and API scenarios both live under features/{ui,api}/lob/** and run under
+// the per-LOB projects above (API scenarios never launch a browser - see the project comment).
+// Layer selection (UI vs API) is by path filter at run time, e.g.
+//   playwright test .features-gen/ui/lob      # UI only
+//   playwright test .features-gen/api/lob     # API only
+// No baseURL is set here: each API object (see apis/baseApiClient.ts) owns its own baseUri.
 
 // ---- Each run gets its own HTML report folder instead of overwriting the last one ----
 // `npm run report` finds the most recent one automatically (see scripts/open-latest-report.js).
@@ -196,5 +182,5 @@ export default defineConfig({
     trace: traceMode,
     actionTimeout: 15_000,
   },
-  projects: [uiProject, apiProject, ...lobProjects],
+  projects: lobProjects,
 });

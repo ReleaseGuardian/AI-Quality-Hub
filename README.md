@@ -163,12 +163,11 @@ To point the suite at different values otherwise, either edit `.env`/`.env.dev`/
 ## Project layout
 
 ```
-features/
+features/                 Every scenario is LOB-scoped - there are no non-LOB tests
   ui/
     lob/                  Per-LOB UI .feature files - each runs once per selected LOB (see Multi-LOB testing)
   api/
     lob/                  Per-LOB API .feature files - browser-less, also run once per selected LOB
-    *.feature             Non-LOB API .feature files (run under the "api" project, no browser launched)
 step-definitions/
   *.steps.ts              Step definitions, grouped by feature area, import Given/When/Then
                            from ../utils/fixtures
@@ -275,10 +274,11 @@ credentials are missing.
 
 | Command | What it runs |
 |---|---|
-| `npm test` | All per-LOB UI scenarios (each runs once per LOB — see [Multi-LOB testing](#multi-lob-testing)), browser from `BROWSER_NAME` (default `chromium`), against whichever environment `TEST_ENVIRONMENT` already resolves to (`dev` if unset) |
-| `npm run execute-ui-tests-dev` / `npm run execute-ui-tests-qa` | Same as `npm test`, explicitly against `dev` / `qa` (sets `TEST_ENVIRONMENT` for you via `cross-env`, so it works the same on every shell/OS) |
-| `npm run execute-api-tests` | API scenarios only (no browser launched) |
-| `npm run execute-api-tests-dev` / `npm run execute-api-tests-qa` | Same as `npm run execute-api-tests`, explicitly against `dev` / `qa` |
+| `npm test` | Every per-LOB scenario — **UI and API** — once per LOB (see [Multi-LOB testing](#multi-lob-testing)), against whichever environment `TEST_ENVIRONMENT` resolves to (`dev` if unset) |
+| `npm run execute-ui-tests` | UI-only per-LOB scenarios (`features/ui/lob/**`) |
+| `npm run execute-ui-tests-dev` / `npm run execute-ui-tests-qa` | Same, explicitly against `dev` / `qa` (sets `TEST_ENVIRONMENT` via `cross-env`, works the same on every shell/OS) |
+| `npm run execute-api-tests` | API-only per-LOB scenarios (`features/api/lob/**`, no browser launched) |
+| `npm run execute-api-tests-dev` / `npm run execute-api-tests-qa` | Same, explicitly against `dev` / `qa` |
 | `npm run execute-unit-tests` | UI scenarios tagged `@UnitTest` only |
 | `npm run execute-regression-tests` | UI scenarios tagged `@Regression` only |
 | `npm run execute-lob-tests` | The per-LOB scenarios under `features/ui/lob/**` **and** `features/api/lob/**`, one run per selected LOB — see [Multi-LOB testing](#multi-lob-testing) for LOB/Plan/tag selection |
@@ -291,8 +291,8 @@ credentials are missing.
 You can also drop straight to the Playwright CLI for anything not covered by a script, e.g.:
 
 ```bash
-npx playwright test --project=LAEX --grep "invalid username"   # one LOB
-npx playwright test --project=LAEX --project=api               # a LOB + the API project
+npx playwright test --project=LAEX --grep "invalid username"   # one LOB, one tag
+npx playwright test --project=LAEX .features-gen/api/lob        # one LOB, API layer only
 npx playwright test --project=LAEX --headed                    # visible browser window
 npx playwright test --project=LAEX --debug                     # step-through debugger
 npx playwright test --ui                                       # interactive UI mode
@@ -304,7 +304,15 @@ npx playwright test --ui                                       # interactive UI 
 
 The app serves many **LOBs** (lines of business, e.g. `LAEX`, `NCEX`, `LADS`, `MIDS`), each grouped under one or more **Plans** (`Exchange`, `Medicaid`, `Medicare`, `CHIP`). A scenario is written **once** and run against any LOB(s) — each LOB is its own Playwright project, built dynamically from config, with the LOB code injected via the `lob` test option (like running the same tests across browsers). Nothing about a LOB lives in the Gherkin.
 
-**This works for both UI and API.** A per-LOB scenario lives under `features/ui/lob/**` (browser) or `features/api/lob/**` (browser-less) — both run under the same per-LOB projects, so `--project=LAEX` exercises that LOB's UI *and* API scenarios in one run, and every selector below applies to both layers. (API LOB scenarios never launch a browser, since they don't touch the `page` fixture.)
+**Everything is LOB-scoped — UI and API alike.** There are no non-LOB tests and no non-LOB projects; the only Playwright projects are the LOBs. A per-LOB scenario lives under `features/ui/lob/**` (browser) or `features/api/lob/**` (browser-less), and both run under the same per-LOB projects. Pick the layer with the command; pick the LOBs/tags with the selectors below — the two are independent:
+
+| Layer | Command |
+|---|---|
+| UI only | `npm run execute-ui-tests` |
+| API only | `npm run execute-api-tests` |
+| Both | `npm run execute-lob-tests` (or `npm test`) |
+
+(API LOB scenarios never launch a browser, since they don't touch the `page` fixture. `--project=LAEX` alone — with no layer command — runs that LOB across both layers.)
 
 **Config (all under `testdata/`):**
 
@@ -316,9 +324,9 @@ The app serves many **LOBs** (lines of business, e.g. `LAEX`, `NCEX`, `LADS`, `M
 
 **Adding a new LOB is config-only** — one line in `lobs.json` plus its credentials in each `<env>/lobCredentials.json`. No scenario, step, or config-code edits.
 
-### Selecting what runs — one command, four axes
+### Selecting what runs — layer command × selectors
 
-`npm run execute-lob-tests` is the single entry point. Selection uses two composable mechanisms:
+Pick the **layer** with the command (`execute-ui-tests`, `execute-api-tests`, or `execute-lob-tests` for both), then narrow by LOB/Plan/tag with the selectors below. The examples use `execute-lob-tests`, but the exact same selectors work on `execute-ui-tests` and `execute-api-tests`. Selection uses two composable mechanisms:
 
 - **Env vars before the command** — decide *which LOB projects exist* (read at config-load, before Playwright starts):
   - `LOBS=LAEX,MIDS` — only these LOBs
