@@ -6,12 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "bddgen": "bddgen",
-    "generate-lob-scenarios": "node scripts/generate-lob-scenarios.js",
-    "pretest": "npm run generate-lob-scenarios && npm run bddgen",
+    "pretest": "npm run bddgen",
     "test": "playwright test --project=ui",
-    "execute-lob-tests": "npm run generate-lob-scenarios && npm run bddgen && playwright test --project=ui --grep",
-    "execute-lob-tests-dev": "cross-env TEST_ENVIRONMENT=dev npm run generate-lob-scenarios && cross-env TEST_ENVIRONMENT=dev npm run bddgen && cross-env TEST_ENVIRONMENT=dev playwright test --project=ui --grep",
-    "execute-lob-tests-qa": "cross-env TEST_ENVIRONMENT=qa npm run generate-lob-scenarios && cross-env TEST_ENVIRONMENT=qa npm run bddgen && cross-env TEST_ENVIRONMENT=qa playwright test --project=ui --grep",
     "execute-ui-tests-dev": "cross-env TEST_ENVIRONMENT=dev npm test",
     "execute-ui-tests-qa": "cross-env TEST_ENVIRONMENT=qa npm test",
     "execute-api-tests": "npm run bddgen && playwright test --project=api",

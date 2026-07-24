@@ -101,10 +101,7 @@ export default defineConfig({
   // resilience CI gets, without editing this file.
   retries: parseIntEnv('RETRIES') ?? (process.env.CI ? 1 : 0),
   workers: parseIntEnv('WORKERS') ?? (process.env.CI ? 2 : undefined),
-  // printSteps shows each Given/When/Then as its own line while it runs, not just one
-  // summary line per scenario at the end - playwright-bdd already registers each step as
-  // a Playwright test.step() internally, this just makes the list reporter print them.
-  reporter: [['list', { printSteps: true }], ['html', { open: 'never', outputFolder: `playwright-report/${reportTimestamp}` }]],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: `playwright-report/${reportTimestamp}` }]],
   globalSetup: require.resolve('./global-setup'),
   use: {
     headless: process.env.HEADLESS !== 'false',
