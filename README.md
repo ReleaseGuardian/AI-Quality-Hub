@@ -324,30 +324,61 @@ The app serves many **LOBs** (lines of business, e.g. `LAEX`, `NCEX`, `LADS`, `M
 
 **Adding a new LOB is config-only** — one line in `lobs.json` plus its credentials in each `<env>/lobCredentials.json`. No scenario, step, or config-code edits.
 
-### Selecting what runs — layer command × selectors
+### Selecting what runs — layer × LOBs/Plans × tags
 
-Pick the **layer** with the command (`execute-ui-tests`, `execute-api-tests`, or `execute-lob-tests` for both), then narrow by LOB/Plan/tag with the selectors below. The examples use `execute-lob-tests`, but the exact same selectors work on `execute-ui-tests` and `execute-api-tests`. Selection uses two composable mechanisms:
+Every run is **three independent choices**; mix and match them freely:
 
-- **Env vars before the command** — decide *which LOB projects exist* (read at config-load, before Playwright starts):
-  - `LOBS=LAEX,MIDS` — only these LOBs
-  - `PLANS=Exchange,Medicare` — every LOB under these Plans
-- **Playwright flags after `-- `** — filter *within* the selected projects:
-  - `--project=LAEX` — a specific LOB (native, exact name)
-  - `--grep @Regression` — by tag (test type / test-case ID / any custom tag — see [Tags](#tags))
+1. **Layer** — chosen by the *command*: `execute-ui-tests` (UI), `execute-api-tests` (API), or `execute-lob-tests` / `npm test` (both). Written as `<layer>` below.
+2. **Which LOBs** — env vars *before* the command (read at config-load, before Playwright starts):
+   - `LOBS=LAEX,MIDS` — only these LOBs
+   - `PLANS=Exchange,Medicare` — every LOB under these Plans
+   - both together = intersection; neither = **all** LOBs
+3. **Which scenarios** — Playwright flags *after* `-- `:
+   - `--project=LAEX` — one exact LOB (an alternative to `LOBS=`)
+   - `--grep @Tag` — by tag: test type (`@Smoke`), test-case ID (`@TC-1043`), or any custom tag. See [Tags](#tags) for combining multiple tags (AND / OR / exclude).
 
-Omit an axis and it's unconstrained (no `LOBS`/`PLANS` = all LOBs; no `--grep` = all tags).
+Add `-dev` / `-qa` to any command (`execute-ui-tests-dev`, `execute-api-tests-qa`, …) to pin the environment; pass `LOBS=`/`PLANS=`/`--grep` exactly the same way.
 
-| Goal | Command |
+**Two rules of placement:** env selectors (`LOBS=`, `PLANS=`) go **before** `npm run …`; Playwright flags (`--project`, `--grep`, …) go **after** `-- `. Always **quote** a `--grep` expression that contains `|`, `(`, or `*`.
+
+#### Recipe table
+
+| Use case | Command |
 |---|---|
-| All LOBs | `npm run execute-lob-tests` |
-| One Plan | `PLANS=Exchange npm run execute-lob-tests` |
-| Several Plans | `PLANS=Exchange,Medicare npm run execute-lob-tests` |
-| One LOB | `npm run execute-lob-tests -- --project=LAEX` |
-| Several LOBs | `LOBS=LAEX,MIDS npm run execute-lob-tests` |
-| Plan ∩ LOB subset | `PLANS=Exchange LOBS=LAEX npm run execute-lob-tests` |
-| Everything at once | `PLANS=Medicare LOBS=LADS,MIDS npm run execute-lob-tests -- --grep @Regression` |
+| Everything (UI + API), all LOBs | `npm test` |
+| All **UI** tests, all LOBs | `npm run execute-ui-tests` |
+| All **API** tests, all LOBs | `npm run execute-api-tests` |
+| **UI** tests for one LOB | `npm run execute-ui-tests -- --project=LAEX` |
+| **API** tests for one LOB | `npm run execute-api-tests -- --project=LAEX` |
+| **UI** tests for one Plan | `PLANS=Exchange npm run execute-ui-tests` |
+| **API** tests for several Plans | `PLANS=Exchange,Medicare npm run execute-api-tests` |
+| **UI** tests for a few chosen LOBs | `LOBS=LAEX,MIDS npm run execute-ui-tests` |
+| **UI** tests for a Plan ∩ one LOB | `PLANS=Exchange LOBS=LAEX npm run execute-ui-tests` |
+| **API** regression for one Plan | `PLANS=Medicare npm run execute-api-tests -- --grep @Regression` |
+| Smoke tests (both layers) for 2 LOBs | `LOBS=LAEX,MIDS npm run execute-lob-tests -- --grep @Smoke` |
+| One test-case ID across all LOBs | `npm run execute-lob-tests -- --grep @TC-1043` |
+| Regression on Medicare LOBs, excluding WIP, in **qa** | `PLANS=Medicare npm run execute-lob-tests-qa -- --grep @Regression --grep-invert @WIP` |
 
-Use `execute-lob-tests-dev` / `-qa` to pin the environment; pass `LOBS=`/`PLANS=`/`--grep` the same way.
+#### Running a specific set of scenarios (e.g. 5 out of 100) for chosen LOBs
+
+Give those scenarios **one shared tag** — even if they're scattered across different feature files — then grep that single tag. It's simpler than listing IDs and doesn't care which files they live in.
+
+```gherkin
+# tag each of the 5 scenarios (alongside their existing tags)
+@Sprint42 @Regression
+Scenario: Member updates their address
+  ...
+```
+
+```bash
+# those 5 scenarios, UI layer, for 2 LOBs  -> 5 scenarios x 2 LOBs = 10 runs
+LOBS=LAEX,MIDS npm run execute-ui-tests -- --grep @Sprint42
+
+# the exact same 5 as API instead
+LOBS=LAEX,MIDS npm run execute-api-tests -- --grep @Sprint42
+```
+
+A scenario can carry many tags, so `@Sprint42` coexists with `@Regression`/`@TC-xxxx`. For a one-off set with no shared tag, OR their IDs instead: `--grep "@TC-101|@TC-102|@TC-103"`. Remove a throwaway grouping tag once it's no longer needed so tags don't accumulate.
 
 ### Feature applicability (some features are only for a few LOBs or Plans)
 
@@ -373,7 +404,7 @@ A LOB the feature doesn't apply to simply never runs that feature file (enforced
 
 ## Browser selection
 
-The `ui` project's browser engine and headed/headless mode are both decided by env vars in `.env`, not by CLI flags or hardcoded config:
+The browser engine and headed/headless mode used by the per-LOB (UI) projects are both decided by env vars in `.env`, not by CLI flags or hardcoded config:
 
 - `BROWSER_NAME` — `chromium` (default) | `firefox` | `webkit`. Read once in `playwright.config.ts` to pick the Playwright `devices[...]` preset applied to every browser-based (per-LOB) project. An unrecognized value throws a clear error at config-load time rather than silently falling back.
 - `HEADLESS` — defaults to headless (`true`); set `HEADLESS=false` to watch the browser run. `npx playwright test --project=LAEX --headed` still works as a CLI override (`--headed` beats `.env` regardless of `HEADLESS`).
